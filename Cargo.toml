@@ -1,5 +1,6 @@
 [package]
-name = "WattSeal"
+name = "wattseal"
+autobins = false
 build = "build.rs"
 version.workspace = true
 authors.workspace = true
@@ -10,6 +11,10 @@ repository.workspace = true
 keywords.workspace = true
 edition.workspace = true
 description.workspace = true
+
+[[bin]]
+name = "WattSeal"
+path = "src/main.rs"
 
 [workspace]
 resolver = "3"

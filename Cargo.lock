@@ -3,23 +3,6 @@
 version = 4
 
 [[package]]
-name = "WattSeal"
-version = "1.0.1"
-dependencies = [
- "chrono",
- "collector",
- "common",
- "gtk",
- "image 0.25.10",
- "is-admin",
- "runas",
- "tray-icon",
- "ui",
- "winit",
- "winres",
-]
-
-[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5340,6 +5323,23 @@ dependencies = [
  "pin-utils",
  "slab",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "wattseal"
+version = "1.0.1"
+dependencies = [
+ "chrono",
+ "collector",
+ "common",
+ "gtk",
+ "image 0.25.10",
+ "is-admin",
+ "runas",
+ "tray-icon",
+ "ui",
+ "winit",
+ "winres",
 ]
 
 [[package]]
