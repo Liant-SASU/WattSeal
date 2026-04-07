@@ -17,11 +17,17 @@ use crate::types::IconData;
 /// Returns: `(Option<IconData>, Option<String>)` — the icon as raw RGBA pixel
 /// data (if available) and the friendly name (if available).
 pub fn load_icon_and_name(path: &str) -> (Option<IconData>, Option<String>) {
-    let icon = load_icon(path);
+    let icon = std::panic::catch_unwind(|| load_icon(path)).unwrap_or_else(|_| {
+        crate::clog!("⚠ Icon extraction panicked for path: {path}");
+        None
+    });
 
     #[cfg(windows)]
     let name = {
-        let fd = pe_file_description(Path::new(path));
+        let fd = std::panic::catch_unwind(|| pe_file_description(Path::new(path))).unwrap_or_else(|_| {
+            crate::clog!("⚠ PE metadata parsing panicked for path: {path}");
+            None
+        });
         if let Some(fd) = fd {
             if fd == "" { None } else { Some(fd) }
         } else {
@@ -47,12 +53,26 @@ fn load_icon(path: &str) -> Option<IconData> {
 /// Windows-only: extract the `FileDescription` from the PE version-info resource of the file at `path` using [`pelite`].
 #[cfg(windows)]
 fn pe_file_description(path: &Path) -> Option<String> {
+    // Fast skip for non-PE files to avoid unnecessary parser work and edge-case crashes.
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    let is_pe_like = matches!(ext.as_deref(), Some("exe" | "dll" | "scr" | "cpl" | "ocx"));
+    if !is_pe_like {
+        return None;
+    }
+
     let map = FileMap::open(path).ok()?;
     let file = PeFile::from_bytes(&map).ok()?;
     let resources = file.resources().ok()?;
     let vi = resources.version_info().ok()?;
     let lang = vi.translation().first().copied()?;
-    vi.value(lang, "FileDescription")
+    let value = vi.value(lang, "FileDescription");
+    if value.is_none() {
+        crate::clog!("⚠ Missing FileDescription in PE metadata for path: {}", path.display());
+    }
+    value
 }
 
 /// Converts a byte count to megabytes.

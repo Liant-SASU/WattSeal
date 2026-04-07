@@ -158,7 +158,9 @@ fn main() {
     }
 
     if is_ui_mode {
-        let _ = ui::run();
+        if let Err(err) = ui::run() {
+            common::clog!("✗ UI failed to start: {err}");
+        }
         return;
     }
 

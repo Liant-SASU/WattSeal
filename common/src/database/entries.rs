@@ -2,10 +2,7 @@ use std::collections::HashMap;
 
 use rusqlite::{Row, ToSql};
 
-use crate::{
-    types::{AllTimeData, CPUData, DiskData, GPUData, NetworkData, ProcessData, RamData, SensorData, TotalData},
-    utils::load_icon_and_name,
-};
+use crate::types::{AllTimeData, CPUData, DiskData, GPUData, NetworkData, ProcessData, RamData, SensorData, TotalData};
 
 /// Maps a data type to its SQLite table schema and row conversion.
 pub trait DatabaseEntry {
@@ -300,7 +297,7 @@ impl DatabaseEntry for ProcessData {
     }
 
     fn from_row(row: &Row) -> rusqlite::Result<Self> {
-        let proc = ProcessData {
+        Ok(ProcessData {
             app_name: row.get("app_name")?,
             process_exe_path: row.get("process_exe_path")?,
             process_power_watts: row.get("process_power_watts")?,
@@ -311,21 +308,6 @@ impl DatabaseEntry for ProcessData {
             written_bytes_per_sec: row.get("written_bytes_per_sec")?,
             subprocess_count: row.get("subprocess_count")?,
             icon: None,
-        };
-        let (icon, friendly_name) = if let Some(exe_path) = &proc.process_exe_path {
-            let path = std::path::Path::new(exe_path);
-            if path.is_absolute() && path.is_file() {
-                load_icon_and_name(exe_path)
-            } else {
-                (None, None)
-            }
-        } else {
-            (None, None)
-        };
-        Ok(ProcessData {
-            icon,
-            app_name: friendly_name.unwrap_or(proc.app_name),
-            ..proc
         })
     }
 

@@ -1,13 +1,15 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
+    path::Path,
     rc::Rc,
 };
 
 use chrono::{DateTime, Duration, Local, Timelike};
 use common::{
-    DatabaseEntry, DiskData, MetricType, NetworkData, ProcessData, RamData, SecondaryValues, SensorData, TotalData,
-    utils::bytes_to_mb,
+    DatabaseEntry, DiskData, IconData, MetricType, NetworkData, ProcessData, RamData, SecondaryValues, SensorData,
+    TotalData,
+    utils::{bytes_to_mb, load_icon_and_name},
 };
 use iced::{
     Alignment, ContentFit, Element, Length, Padding, Task,
@@ -310,6 +312,7 @@ impl TotalState {
 struct ProcessesState {
     top_processes: Vec<ProcessData>,
     icon_handles: HashMap<String, image::Handle>,
+    icon_cache: HashMap<String, (Option<IconData>, Option<String>)>,
 }
 
 impl ProcessesState {
@@ -317,11 +320,32 @@ impl ProcessesState {
         Self {
             top_processes: Vec::new(),
             icon_handles: HashMap::new(),
+            icon_cache: HashMap::new(),
         }
     }
 
     fn update_from_snapshot(&mut self, processes: &[ProcessData]) {
-        let next_top = processes.to_vec();
+        let mut next_top = processes.to_vec();
+
+        for process in &mut next_top {
+            if let Some(exe_path) = &process.process_exe_path {
+                let path = Path::new(exe_path);
+                if !path.is_absolute() {
+                    continue;
+                }
+                let entry = self.icon_cache.entry(exe_path.clone()).or_insert_with(|| {
+                    if path.is_file() {
+                        load_icon_and_name(exe_path)
+                    } else {
+                        (None, None)
+                    }
+                });
+                process.icon = entry.0.clone();
+                if let Some(ref friendly_name) = entry.1 {
+                    process.app_name = friendly_name.clone();
+                }
+            }
+        }
 
         for process in &next_top {
             if let Some(icon_data) = &process.icon {
