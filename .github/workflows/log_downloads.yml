@@ -12,17 +12,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout main
-        uses: actions/checkout@v6
-        with:
-          ref: main
-          path: main
-
       - name: Checkout gh-pages
         uses: actions/checkout@v6
         with:
           ref: gh-pages
-          path: gh-pages
 
       - name: Set date
         id: date
@@ -33,7 +26,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          python3 main/log_downloads.py
+          python3 log_downloads.py
 
       - name: Commit and push to gh-pages
         uses: stefanzweifel/git-auto-commit-action@v7
@@ -41,4 +34,4 @@ jobs:
           commit_message: "chore: log downloads ${{ steps.date.outputs.today }}"
           branch: gh-pages
           repository: gh-pages
-          file_pattern: 'download_count.txt download_daily.txt download_daily_31.txt'
+          file_pattern: 'download_count.txt download_daily.txt'
