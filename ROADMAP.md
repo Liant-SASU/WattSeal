@@ -5,10 +5,16 @@
 - [ ] Improve accuracy of total power usage on several devices by adding more sensors and refining estimation algorithms ([#17](https://github.com/Daminoup88/WattSeal/issues/17))
 - [ ] Add tests
 - [ ] Run as a service ([#18](https://github.com/Daminoup88/WattSeal/issues/18))
+- [ ] Configurable sensors polling frequency with no regression on purge / UI averages ([46](https://github.com/Daminoup88/WattSeal/issues/46))
+- [ ] Improved estimation of energy consumption on machines with Apple Silicon processors ([46](https://github.com/Daminoup88/WattSeal/issues/46))
 
 ### Security
 
 - [ ] Remove WinRing0 driver dependency on Windows (see [Security](SECURITY.md#winring0-kernel-driver-windows) section for details) ([#19](https://github.com/Daminoup88/WattSeal/issues/19))
+
+## Data integration
+
+- [ ] The ability to send data via MQTT to a broker ([46](https://github.com/Daminoup88/WattSeal/issues/46))
 
 ## UI / UX
 
