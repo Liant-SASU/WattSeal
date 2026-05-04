@@ -3,6 +3,7 @@ pub mod sensors;
 
 use std::{
     cell::RefCell,
+    net::SocketAddr,
     rc::Rc,
     thread,
     time::{Duration, Instant, SystemTime},
@@ -12,14 +13,25 @@ use std::{
 use common::logging::start_log_session;
 use common::{clog, database::purge::averaging_and_purging_data};
 use database::Database;
+use mqtt::{
+    MQTTPublisher,
+    topics::{hardware_info_topic, sensor_data_to_topic},
+};
 use sensors::{SensorType, create_event_from_sensors, get_hardware_info, gpu::get_gpu_list};
 use sysinfo::System;
 
 use crate::sensors::{DiskSensor, NetworkSensor, RamSensor};
 
+/// MQTT information to interact with a MQTT client
+pub struct MQTTInfos {
+    id: String,
+    publisher: MQTTPublisher<rumqttc::Client>,
+}
+
 /// Background sensor-collection application.
 pub struct CollectorApp {
-    database: Database,
+    database: Option<Database>,
+    mqtt_infos: Option<MQTTInfos>,
     sensors: Vec<SensorType>,
     system: Rc<RefCell<System>>,
     last_update: Instant,
@@ -28,13 +40,29 @@ pub struct CollectorApp {
     iteration: u64,
 }
 
+impl MQTTInfos {
+    pub fn new(id: &str, addr: &SocketAddr) -> Self {
+        let publisher = MQTTPublisher::new_from_addr(addr);
+        MQTTInfos {
+            id: id.to_string(),
+            publisher,
+        }
+    }
+}
+
 impl CollectorApp {
     /// Creates a new collector with a database connection.
-    pub fn new() -> Result<Self, String> {
-        let database = Database::new().map_err(|e| format!("Failed to create database: {e}"))?;
+    pub fn new(enable_save_db: bool, mqtt_infos: Option<MQTTInfos>) -> Result<Self, String> {
+        let database;
+        if enable_save_db {
+            database = Some(Database::new().map_err(|e| format!("Failed to create database: {e}"))?);
+        } else {
+            database = None
+        }
         let s = System::new_all();
         Ok(CollectorApp {
             database,
+            mqtt_infos,
             sensors: Vec::new(),
             system: Rc::new(RefCell::new(s)),
             last_update: Instant::now(),
@@ -92,22 +120,33 @@ impl CollectorApp {
         self.sensors.push(SensorType::Total);
         self.sensors.push(SensorType::Process);
 
-        // Database
-        clog!("\n========== SETTING UP DATABASE ==========");
-        let table_names: Vec<&str> = self.sensors.iter().map(|s| s.table_name()).collect();
-        self.database
-            .create_tables_if_not_exists(&table_names)
-            .map_err(|e| format!("Failed to create database tables: {e}"))?;
-        clog!("✓ Database initialized");
+        if let Some(database) = &mut self.database {
+            // Database
+            clog!("\n========== SETTING UP DATABASE ==========");
+            let table_names: Vec<&str> = self.sensors.iter().map(|s| s.table_name()).collect();
+            database
+                .create_tables_if_not_exists(&table_names)
+                .map_err(|e| format!("Failed to create database tables: {e}"))?;
+            clog!("✓ Database initialized");
+        }
 
         // Hardware info
         clog!("\n========== GATHERING HARDWARE INFORMATION ==========\n");
         let info = get_hardware_info(&self.sensors);
-        match self.database.insert_hardware_info(&info) {
-            Ok(_) => clog!("✓ Hardware info saved"),
-            Err(e) => clog!("✗ Failed to save hardware info: {e}"),
-        }
 
+        if let Some(database) = &mut self.database {
+            match database.insert_hardware_info(&info) {
+                Ok(_) => clog!("✓ Hardware info saved"),
+                Err(e) => clog!("✗ Failed to save hardware info: {e}"),
+            }
+        }
+        if let Some(mqtt_infos) = &self.mqtt_infos {
+            let topic = hardware_info_topic(&mqtt_infos.id);
+            match mqtt_infos.publisher.publish(&topic, &info.hardware_info_serialized) {
+                Ok(_) => clog!("✓ Hardware info published on broker"),
+                Err(e) => clog!("✗ Failed to publish hardware info: {e}"),
+            }
+        }
         clog!("Initialization complete");
         Ok(())
     }
@@ -135,23 +174,36 @@ impl CollectorApp {
 
             let event = create_event_from_sensors(&self.sensors, self.system.clone());
 
-            #[cfg(debug_assertions)]
-            {
-                let start = Instant::now();
-                let result = self
-                    .database
-                    .insert_event_and_update_energy(&event, since_last_update_secs);
-                let duration = start.elapsed();
-                match result {
-                    Ok(_) => println!("✓ Event data saved to database (took {:.2?})", duration),
-                    Err(e) => eprintln!("✗ Failed to save event data: {:?}", e),
+            if let Some(database) = &mut self.database {
+                #[cfg(debug_assertions)]
+                {
+                    let start = Instant::now();
+                    let result = database.insert_event_and_update_energy(&event, since_last_update_secs);
+                    let duration = start.elapsed();
+                    match result {
+                        Ok(_) => println!("✓ Event data saved to database (took {:.2?})", duration),
+                        Err(e) => eprintln!("✗ Failed to save event data: {:?}", e),
+                    }
                 }
+
+                #[cfg(not(debug_assertions))]
+                let _ = database.insert_event_and_update_energy(&event, since_last_update_secs);
             }
 
-            #[cfg(not(debug_assertions))]
-            let _ = self
-                .database
-                .insert_event_and_update_energy(&event, since_last_update_secs);
+            if let Some(mqtt_infos) = &self.mqtt_infos {
+                for sensor_data in event.data() {
+                    let topic = sensor_data_to_topic(&mqtt_infos.id, &sensor_data);
+
+                    #[cfg(debug_assertions)]
+                    match mqtt_infos.publisher.publish(&topic, sensor_data) {
+                        Ok(_) => println!("✓ Sensor data published on topic {}", topic),
+                        Err(e) => eprintln!("✗ Failed to publish sensor data on topic {}: {:?}", topic, e),
+                    }
+
+                    #[cfg(not(debug_assertions))]
+                    let _ = mqtt_infos.publisher.publish(&topic, sensor_data);
+                }
+            }
 
             #[cfg(debug_assertions)]
             for sensor_data in event.data() {

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{
+    net::SocketAddr,
     process::{Child, Command},
     sync::{Arc, Mutex, mpsc},
     thread,
@@ -8,7 +9,7 @@ use std::{
 };
 
 use bpaf::{OptionParser, Parser, construct, long, short};
-use collector::CollectorApp;
+use collector::{CollectorApp, MQTTInfos};
 use common::WINDOW_ICON_BYTES;
 use tray_icon::{
     TrayIconBuilder, TrayIconEvent,
@@ -28,6 +29,9 @@ struct Options {
     ui_mode: bool,
     background_mode: bool,
     headless_mode: bool,
+    mqtt_id: Option<String>,
+    mqtt_addr: Option<SocketAddr>,
+    db_mode: bool,
 }
 
 /// Returns options parser to run
@@ -49,10 +53,27 @@ fn options() -> OptionParser<Options> {
         .help("Runs only Wattseal sensors, without UI and tray icon.")
         .switch();
 
+    let mqtt_id = long("mqtt-id")
+        .help("Identifier used as the root of MQTT topics (e.g. my-machine/cpu, my-machine/ram). Requires --mqtt-addr to be set. Defaults to \"wattseal_collector\".")
+        .argument::<String>("ID")
+        .optional();
+
+    let mqtt_addr = long("mqtt-addr")
+        .help("Specify MQTT broker address to send sensors data.")
+        .argument::<SocketAddr>("ADDRESS")
+        .optional();
+
+    let db_mode = long("no-db")
+        .help("Do not save sensors metrics in local database.")
+        .flag(false, true);
+
     construct!(Options {
         ui_mode,
         background_mode,
         headless_mode,
+        mqtt_id,
+        mqtt_addr,
+        db_mode,
     })
     .to_options()
     .descr("WattSeal - Per-app power monitoring tool")
@@ -174,8 +195,9 @@ fn run_linux_tray(ui_child: &Arc<Mutex<Option<Child>>>) -> bool {
 }
 
 /// Initializes the collector
-fn start_collector() -> Result<CollectorApp, String> {
-    let mut app = CollectorApp::new().map_err(|e| format!("Failed to create CollectorApp: {e}"))?;
+fn start_collector(enable_save_db: bool, mqtt_infos: Option<MQTTInfos>) -> Result<CollectorApp, String> {
+    let mut app =
+        CollectorApp::new(enable_save_db, mqtt_infos).map_err(|e| format!("Failed to create CollectorApp: {e}"))?;
     app.initialize()
         .map_err(|e| format!("Failed to initialize CollectorApp: {e}"))?;
     Ok(app)
@@ -201,6 +223,18 @@ fn main() {
         }
     }
 
+    if !options.db_mode && options.mqtt_addr.is_none() {
+        let msg = format!("Impossible to run without both local data storage and an MQTT broker.");
+        common::clog!("✗ {msg}");
+        return;
+    }
+
+    if options.mqtt_addr.is_none() && options.mqtt_id.is_some() {
+        let msg = format!("An MQTT broker address must be entered in order to specify the collector's MQTT topic.");
+        common::clog!("✗ {msg}");
+        return;
+    }
+
     if options.headless_mode && (options.ui_mode || options.background_mode) {
         let msg = format!("Impossible to run headless mode if UI or background mode is enabled");
         common::clog!("✗ {msg}");
@@ -223,8 +257,15 @@ fn main() {
         }
     };
 
+    let mqtt_infos = if let Some(mqtt_addr) = options.mqtt_addr {
+        let id = options.mqtt_id.unwrap_or("wattseal_collector".to_string());
+        Some(MQTTInfos::new(&id, &mqtt_addr))
+    } else {
+        None
+    };
+
     if options.headless_mode {
-        match start_collector() {
+        match start_collector(options.db_mode, mqtt_infos) {
             Ok(mut app) => app.run(),
             Err(e) => common::clog!("✗ {e}"),
         }
@@ -235,7 +276,7 @@ fn main() {
     let (tx, rx) = mpsc::channel::<Result<(), String>>();
 
     thread::spawn(move || {
-        let mut app = match start_collector() {
+        let mut app = match start_collector(options.db_mode, mqtt_infos) {
             Ok(app) => app,
             Err(e) => {
                 common::clog!("✗ {e}");
