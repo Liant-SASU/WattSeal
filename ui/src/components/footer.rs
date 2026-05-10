@@ -18,7 +18,7 @@ use crate::{
 };
 
 const GITHUB_URL: &str = "https://github.com/Daminoup88/WattSeal/";
-const ISSUES_URL: &str = "https://github.com/Daminoup88/WattSeal/issues/new";
+const ISSUES_URL: &str = "https://github.com/Daminoup88/WattSeal/issues/new/choose";
 
 /// Minimal footer with version info and external links.
 pub struct Footer;
