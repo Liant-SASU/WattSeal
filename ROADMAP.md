@@ -15,7 +15,8 @@
 
 ## Data integration
 
-- [ ] The ability to send data via MQTT to a broker ([46](https://github.com/Daminoup88/WattSeal/issues/46))
+- [x] The ability to send data via MQTT to a broker ([#55](https://github.com/Daminoup88/WattSeal/issues/55))
+- [ ] Change from power metrics to energy metrics (at least at the sensor level) ([#58](https://github.com/Daminoup88/WattSeal/issues/58))
 
 ## UI / UX
 
