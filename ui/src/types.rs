@@ -1,7 +1,6 @@
 use std::fmt::Display;
 
 use chrono::{DateTime, Duration, Local};
-use common::SECONDS_PER_HOUR;
 
 /// Selectable time window for chart data display.
 #[derive(Default, Clone, PartialEq, Debug)]
@@ -57,10 +56,10 @@ impl TimeRange {
         matches!(self, TimeRange::LastMinute)
     }
 
-    /// Returns true outside the live range, where charts display energy (Wh)
-    /// instead of instantaneous power (W).
+    /// Returns true when the granularity is >= 1 hour,
+    /// meaning we display energy (Wh) instead of average power (W).
     pub fn is_energy_mode(&self) -> bool {
-        !self.is_real_time()
+        self.granularity_seconds() >= 3600
     }
 
     /// Returns the power/energy unit string for the current mode.
@@ -73,7 +72,7 @@ impl TimeRange {
     /// For power mode: factor is 1 (already watts).
     pub fn power_scale_factor(&self) -> f64 {
         if self.is_energy_mode() {
-            self.granularity_seconds() as f64 / SECONDS_PER_HOUR
+            self.granularity_seconds() as f64 / 3600.0
         } else {
             1.0
         }

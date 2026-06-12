@@ -1,5 +1,5 @@
 use chrono::{DateTime, Local};
-use common::{MetricKind, SensorData};
+use common::{DataDB, MetricKindDB};
 
 use crate::{
     pages::Page,
@@ -20,10 +20,10 @@ pub enum Message {
     CustomKwhCostInput(String),
     OpenSettings,
     CloseSettings,
-    ChangeChartMetricType(String, MetricKind),
+    ChangeChartMetricType(String, MetricKindDB),
     ChangeChartTimeRange(String, TimeRange),
-    UpdateChartData(Vec<(DateTime<Local>, SensorData)>),
-    ReplaceChartData(String, Vec<(DateTime<Local>, SensorData)>),
+    UpdateChartData(Vec<(DateTime<Local>, DataDB)>),
+    ReplaceChartData(String, Vec<(DateTime<Local>, DataDB)>),
     FetchChartData(String, TimeRange),
     FetchAllChartsData(TimeRange),
     Redraw,
