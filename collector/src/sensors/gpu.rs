@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
-use common::types::InitialInfo;
+use common::{EnergyUJ, SensorData, types::InitialInfo};
 
 use super::{Sensor, SensorError, SensorType};
-use crate::database::SensorData;
 
 /// GPU hardware vendor identifier.
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -33,13 +32,9 @@ impl GPUVendor {
 /// Returns the list of GPU adapter names detected on this system.
 #[cfg(target_os = "windows")]
 pub fn get_gpu_list() -> Vec<String> {
-    use std::collections::HashSet;
-
     use windows::Win32::Graphics::Dxgi::*;
 
     let mut list = Vec::new();
-    // Use a HashSet to track the unique identifiers of the GPUs we've seen
-    let mut seen_luids: HashSet<u64> = HashSet::new();
 
     unsafe {
         let factory: IDXGIFactory1 = match CreateDXGIFactory1() {
@@ -55,13 +50,6 @@ pub fn get_gpu_list() -> Vec<String> {
             };
 
             if let Ok(desc) = adapter.GetDesc1() {
-                let luid_u64 = ((desc.AdapterLuid.HighPart as u64) << 32) | (desc.AdapterLuid.LowPart as u64);
-
-                if !seen_luids.insert(luid_u64) {
-                    i += 1;
-                    continue;
-                }
-
                 let name = String::from_utf16_lossy(
                     &desc
                         .Description
@@ -105,7 +93,7 @@ pub fn get_gpu_list() -> Vec<String> {
     Vec::new()
 }
 
-/// Platform-specific GPU energy sensor.
+/// Platform-specific GPU power sensor.
 pub enum GPUSensor {
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     Nvidia(nvidia_gpu::NvidiaGPUSensor),
@@ -116,7 +104,7 @@ pub enum GPUSensor {
 }
 
 impl Sensor for GPUSensor {
-    fn read_full_data(&self) -> Result<SensorData, SensorError> {
+    fn read_full_data(&self) -> Result<SensorData<EnergyUJ>, SensorError> {
         match self {
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             GPUSensor::Nvidia(sensor) => sensor.read_full_data(),
@@ -138,8 +126,8 @@ impl Sensor for GPUSensor {
     }
 }
 
-/// Creates a GPU energy sensor appropriate for the given vendor.
-pub fn get_gpu_energy_sensor(vendor_id: &str, index: u32) -> Result<SensorType, SensorError> {
+/// Creates a GPU power sensor appropriate for the given vendor.
+pub fn get_gpu_consumption_sensor(vendor_id: &str, index: u32) -> Result<SensorType, SensorError> {
     let vendor = GPUVendor::from_str(vendor_id);
 
     #[cfg(target_os = "windows")]
@@ -197,16 +185,14 @@ impl GPUSensor {
 mod amd_gpu {
     use std::{cell::RefCell, time::Instant};
 
-    use adlx::{Gpu, helper::AdlxHelper, performance_monitoring_services::PerformanceMonitoringServices};
-    use common::types::EnergyUj;
+    use adlx::{gpu_metrics::GpuMetrics, helper::AdlxHelper};
+    use common::{EnergyUJ, GPUData, SensorData};
 
     use super::{Sensor, SensorError};
-    use crate::database::{GPUData, SensorData};
 
     pub struct AmdGPUSensor {
         _helper: AdlxHelper,
-        perfo: PerformanceMonitoringServices,
-        gpu: Gpu,
+        gpu_metrics: GpuMetrics,
         last_reading: RefCell<Instant>,
         vram_supported: bool,
     }
@@ -219,7 +205,11 @@ mod amd_gpu {
                 .performance_monitoring_services()
                 .map_err(|e| SensorError::ReadError(e.to_string()))?;
             let gpu_list = system.gpus().map_err(|e| SensorError::ReadError(e.to_string()))?;
+
             let gpu = gpu_list.at(index).map_err(|e| SensorError::ReadError(e.to_string()))?;
+            let gpu_metrics = perfo
+                .current_gpu_metrics(&gpu)
+                .map_err(|e| SensorError::ReadError(e.to_string()))?;
 
             let supported_metrics = perfo
                 .supported_gpu_metrics(&gpu)
@@ -250,8 +240,7 @@ mod amd_gpu {
 
             Ok(AmdGPUSensor {
                 _helper: helper,
-                perfo,
-                gpu,
+                gpu_metrics,
                 last_reading: RefCell::new(Instant::now()),
                 vram_supported,
             })
@@ -259,20 +248,17 @@ mod amd_gpu {
     }
 
     impl Sensor for AmdGPUSensor {
-        fn read_full_data(&self) -> Result<SensorData, SensorError> {
+        fn read_full_data(&self) -> Result<SensorData<EnergyUJ>, SensorError> {
             let now = Instant::now();
             let duration = now.duration_since(*self.last_reading.borrow()).as_secs_f64().max(0.001);
-            let gpu_metrics = self
-                .perfo
-                .current_gpu_metrics(&self.gpu)
-                .map_err(|e| SensorError::ReadError(e.to_string()))?;
 
             // Read AMD GPU data here
-            let power_w = gpu_metrics
-                .total_board_power()
+            let power_mw = self
+                .gpu_metrics
+                .power()
                 .map_err(|e| SensorError::ReadError(e.to_string()))?;
 
-            let energy_j = power_w * duration;
+            let energy_uj = (power_mw * duration * 1000.0) as u64; // UJ = MW * t * 1000.0 
 
             let usage = gpu_metrics.usage().map_err(|e| SensorError::ReadError(e.to_string()))?;
             let memory = if self.vram_supported {
@@ -282,12 +268,10 @@ mod amd_gpu {
             };
 
             let data = GPUData {
-                total_energy: Some(EnergyUj::from_joules(energy_j)),
+                total_consumption: Some(energy_uj),
                 usage_percent: Some(usage as f64),
                 vram_usage_percent: memory,
             };
-
-            *self.last_reading.borrow_mut() = now;
 
             Ok(data.into())
         }
@@ -298,11 +282,10 @@ mod amd_gpu {
 mod nvidia_gpu {
     use std::{cell::RefCell, collections::HashMap, time::Instant};
 
-    use common::types::EnergyUj;
+    use common::{EnergyUJ, GPUData, SensorData};
     use nvml_wrapper::Nvml;
 
     use super::{Sensor, SensorError};
-    use crate::database::{GPUData, SensorData};
 
     enum NvidiaReadMode {
         EnergyCounter,
@@ -451,6 +434,7 @@ mod nvidia_gpu {
 mod intel_gpu {
     use std::slice;
 
+    use common::{EnergyUJ, GPUData, SensorData};
     use windows::{
         Win32::System::Performance::{
             PDH_FMT_COUNTERVALUE_ITEM_W, PDH_FMT_DOUBLE, PDH_HCOUNTER, PDH_HQUERY, PdhAddEnglishCounterW,
@@ -460,7 +444,6 @@ mod intel_gpu {
     };
 
     use super::{Sensor, SensorError};
-    use crate::database::{GPUData, SensorData};
 
     const PDH_MORE_DATA: u32 = 0x800007D2;
 
@@ -505,7 +488,7 @@ mod intel_gpu {
     }
 
     impl Sensor for IntelGPUSensor {
-        fn read_full_data(&self) -> Result<SensorData, SensorError> {
+        fn read_full_data(&self) -> Result<SensorData<EnergyUJ>, SensorError> {
             unsafe {
                 PdhCollectQueryData(self.query);
                 if !self.initialized.get() {
@@ -517,7 +500,7 @@ mod intel_gpu {
                     != PDH_MORE_DATA
                 {
                     return Ok(GPUData {
-                        total_energy: None,
+                        total_consumption: None,
                         usage_percent: Some(0.0),
                         vram_usage_percent: None,
                     }
@@ -527,7 +510,7 @@ mod intel_gpu {
                 let items = buf.as_mut_ptr() as *mut PDH_FMT_COUNTERVALUE_ITEM_W;
                 if PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, &mut size, &mut count, Some(items)) != 0 {
                     return Ok(GPUData {
-                        total_energy: None,
+                        total_consumption: None,
                         usage_percent: Some(0.0),
                         vram_usage_percent: None,
                     }
@@ -542,7 +525,7 @@ mod intel_gpu {
                     })
                     .fold(0.0f64, f64::max);
                 Ok(GPUData {
-                    total_energy: None,
+                    total_consumption: None,
                     usage_percent: Some(max.clamp(0.0, 100.0)),
                     vram_usage_percent: None,
                 }
