@@ -192,8 +192,12 @@ impl MSRReader {
     ) -> Option<EnergyUj> {
         match (current_energy_value, last_energy_value) {
             (Some(current), Some(last)) => {
-                // Handle wrap-around of the energy counter and cast to u32 for 32-bit counters (still works for 64-bit counters with real-world deltas)
-                let energy_diff = (current.wrapping_sub(last)) as u32;
+                // Handle wrap-around of the energy counter and cast to u32 for 32-bit counters only on Intel CPUs, as AMD (sometimes) uses 64-bit counters.
+                let energy_diff = if matches!(self.vendor, CPUVendor::Intel) {
+                    (current.wrapping_sub(last)) as u32 as u64
+                } else {
+                    current.saturating_sub(last)
+                };
                 if current == 0 || last == 0 || energy_diff == 0 {
                     return None;
                 }
