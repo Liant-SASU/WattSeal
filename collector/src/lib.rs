@@ -13,7 +13,7 @@ pub use common::clog;
 #[cfg(not(debug_assertions))]
 use common::logging::start_log_session;
 use common::{
-    DatabaseEntry, EnergyWH, PowerWatt, ProcessDataDB, SensorData, TotalDataDB,
+    DatabaseEntry, EnergyWh, ProcessDataDB, SensorData, TotalDataDB,
     database::{purge::averaging_and_purging_data, types::GeneralDataDB},
 };
 use database::{Database, consumption_event_to_eventdb};
@@ -29,15 +29,15 @@ use sensors::{
 use sysinfo::System;
 
 /// Possible units to choose as output
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub enum ConsumptionUnit {
-    Watt,
     WattHour,
+    #[default]
     UJoul,
 }
 
 /// MQTT information to interact with a MQTT client
-pub struct MQTTInfos {
+pub struct MQTTInfo {
     id: String,
     publisher: MQTTPublisher<rumqttc::Client>,
     unit: Option<ConsumptionUnit>,
@@ -46,7 +46,7 @@ pub struct MQTTInfos {
 /// Background sensor-collection application.
 pub struct CollectorApp {
     database: Option<Database>,
-    mqtt_infos: Option<MQTTInfos>,
+    mqtt_info: Option<MQTTInfo>,
     sensors: Vec<SensorType>,
     system: Rc<RefCell<System>>,
     last_update: Instant,
@@ -55,10 +55,10 @@ pub struct CollectorApp {
     iteration: u64,
 }
 
-impl MQTTInfos {
+impl MQTTInfo {
     pub fn new(id: &str, addr: &SocketAddr, unit: Option<ConsumptionUnit>) -> Self {
         let publisher = MQTTPublisher::new_from_addr(addr);
-        MQTTInfos {
+        MQTTInfo {
             id: id.to_string(),
             publisher,
             unit,
@@ -68,7 +68,7 @@ impl MQTTInfos {
 
 impl CollectorApp {
     /// Creates a new collector with a database connection.
-    pub fn new(enable_save_db: bool, mqtt_infos: Option<MQTTInfos>) -> Result<Self, String> {
+    pub fn new(enable_save_db: bool, mqtt_info: Option<MQTTInfo>) -> Result<Self, String> {
         let database;
         if enable_save_db {
             database = Some(Database::new().map_err(|e| format!("Failed to create database: {e}"))?);
@@ -78,7 +78,7 @@ impl CollectorApp {
         let s = System::new_all();
         Ok(CollectorApp {
             database,
-            mqtt_infos,
+            mqtt_info,
             sensors: Vec::new(),
             system: Rc::new(RefCell::new(s)),
             last_update: Instant::now(),
@@ -147,7 +147,7 @@ impl CollectorApp {
                 GPUVendor::Other => 0,
             };
 
-            match sensors::gpu::get_gpu_consumption_sensor(gpu_name, vendor_index) {
+            match sensors::gpu::get_gpu_energy_sensor(gpu_name, vendor_index) {
                 Ok(sensor) => {
                     crate::clog!(
                         "✓ GPU sensor initialized: '{}' (vendor={:?}, vendor_index={})",
@@ -197,9 +197,9 @@ impl CollectorApp {
                 Err(e) => crate::clog!("✗ Failed to save hardware info: {e}"),
             }
         }
-        if let Some(mqtt_infos) = &self.mqtt_infos {
-            let topic = hardware_info_topic(&mqtt_infos.id);
-            match mqtt_infos.publisher.publish(&topic, &info.hardware_info.serialized()) {
+        if let Some(mqtt_info) = &self.mqtt_info {
+            let topic = hardware_info_topic(&mqtt_info.id);
+            match mqtt_info.publisher.publish(&topic, &info.hardware_info.serialized()) {
                 Ok(_) => crate::clog!("✓ Hardware info published on broker"),
                 Err(e) => crate::clog!("✗ Failed to publish hardware info: {e}"),
             }
@@ -239,7 +239,7 @@ impl CollectorApp {
                 #[cfg(debug_assertions)]
                 {
                     let start = Instant::now();
-                    let result = database.insert_event_and_update_energy(&eventdb, since_last_update.as_secs_f64());
+                    let result = database.insert_event_and_update_energy(&eventdb, 1);
 
                     let duration = start.elapsed();
                     match result {
@@ -249,24 +249,20 @@ impl CollectorApp {
                 }
 
                 #[cfg(not(debug_assertions))]
-                let _ = database.insert_event_and_update_energy(&eventdb, since_last_update.as_secs_f64());
+                let _ = database.insert_event_and_update_energy(&eventdb, 1);
             }
 
-            if let Some(mqtt_infos) = &self.mqtt_infos {
+            if let Some(mqtt_info) = &self.mqtt_info {
                 for sensor_data in event.data() {
-                    let topic = sensor_data_to_topic(&mqtt_infos.id, &sensor_data);
+                    let topic = sensor_data_to_topic(&mqtt_info.id, &sensor_data);
 
-                    let _result = mqtt_infos.unit.map_or_else(
-                        || mqtt_infos.publisher.publish(&topic, sensor_data),
+                    let _result = mqtt_info.unit.map_or_else(
+                        || mqtt_info.publisher.publish(&topic, sensor_data),
                         |u| match u {
-                            ConsumptionUnit::UJoul => mqtt_infos.publisher.publish(&topic, &sensor_data),
+                            ConsumptionUnit::UJoul => mqtt_info.publisher.publish(&topic, &sensor_data),
                             ConsumptionUnit::WattHour => {
-                                let sensor_data_wh: SensorData<EnergyWH> = sensor_data.to_wh();
-                                mqtt_infos.publisher.publish(&topic, &sensor_data_wh)
-                            }
-                            ConsumptionUnit::Watt => {
-                                let sensor_data_w: SensorData<PowerWatt> = sensor_data.to_watts(since_last_update);
-                                mqtt_infos.publisher.publish(&topic, &sensor_data_w)
+                                let sensor_data_wh: SensorData<EnergyWh> = sensor_data.to_wh();
+                                mqtt_info.publisher.publish(&topic, &sensor_data_wh)
                             }
                         },
                     );
