@@ -1,4 +1,5 @@
 pub mod entries;
+mod migration;
 pub mod purge;
 pub mod types;
 
@@ -14,12 +15,16 @@ use crate::{
         AllTimeDataDB, CPUDataDB, DataDB, DiskDataDB, EventDB, GPUDataDB, GeneralDataDB, NetworkDataDB, ProcessDataDB,
         RamDataDB, SensorDataDB, TotalDataDB,
     },
-    types::HardwareInfo,
+    types::{EnergyUj, HardwareInfo},
 };
 
 pub static DATABASE_PATH: &str = "power_monitoring.db";
+pub const DATABASE_TARGET_VERSION: i32 = 2;
+pub const LIVE_SAMPLING_PERIOD_SECONDS: i64 = 1;
+pub const HOURLY_SAMPLING_PERIOD_SECONDS: i64 = 3600;
 
 macro_rules! dispatch_entry {
+    // Static method dispatch based on table name
     ($table_name:expr, $method:ident ( $($arg:expr),* )) => {{
         if $table_name == CPUDataDB::table_name_static() { Some(CPUDataDB::$method($($arg),*)) }
         else if $table_name == GPUDataDB::table_name_static() { Some(GPUDataDB::$method($($arg),*)) }
@@ -30,6 +35,39 @@ macro_rules! dispatch_entry {
         else if $table_name == ProcessDataDB::table_name_static() { Some(ProcessDataDB::$method($($arg),*)) }
         else { None }
     }};
+
+     // Instance method dispatch based on table name and generic type
+    ($table_name:expr, $instance:expr, $method:ident, $generic_p:ty, ( $($arg:expr),* )) => {{
+        if $table_name == CPUDataDB::table_name_static() { Some($instance.$method::<CPUDataDB, $generic_p>($($arg),*)) }
+        else if $table_name == GPUDataDB::table_name_static() { Some($instance.$method::<GPUDataDB, $generic_p>($($arg),*)) }
+        else if $table_name == RamDataDB::table_name_static() { Some($instance.$method::<RamDataDB, $generic_p>($($arg),*)) }
+        else if $table_name == DiskDataDB::table_name_static() { Some($instance.$method::<DiskDataDB, $generic_p>($($arg),*)) }
+        else if $table_name == NetworkDataDB::table_name_static() { Some($instance.$method::<NetworkDataDB, $generic_p>($($arg),*)) }
+        else if $table_name == TotalDataDB::table_name_static() || $table_name == AllTimeDataDB::table_name_static() {
+            Some($instance.$method::<TotalDataDB, $generic_p>($($arg),*))
+        }
+        else if $table_name == ProcessDataDB::table_name_static() { Some($instance.$method::<ProcessDataDB, $generic_p>($($arg),*)) }
+        else { None }
+    }};
+}
+
+macro_rules! match_sensor_variant {
+    ($val:expr, $inner:ident => $body:expr) => {
+        match $val {
+            DataDB::Sensor(SensorDataDB::CPU($inner)) => $body,
+            DataDB::Sensor(SensorDataDB::GPU($inner)) => $body,
+            DataDB::Sensor(SensorDataDB::Ram($inner)) => $body,
+            DataDB::Sensor(SensorDataDB::Disk($inner)) => $body,
+            DataDB::Sensor(SensorDataDB::Network($inner)) => $body,
+            DataDB::Total($inner) => $body,
+            DataDB::Process(processes) => {
+                for $inner in processes {
+                    $body?;
+                }
+                Ok(())
+            }
+        }
+    };
 }
 
 /// Returns `true` if the table name is in the known list of sensor tables.
@@ -87,14 +125,72 @@ impl From<rusqlite::Error> for DatabaseError {
 }
 
 impl Database {
-    /// Opens the database and reads existing table metadata.
+    /// Opens the database, applies collector-owned migrations, and reads metadata.
     pub fn new() -> Result<Self, DatabaseError> {
+        let mut conn = Self::open_connection()?;
+        let current_version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+
+        if current_version == 0 {
+            // Differentiate between a fresh DB and a version 0 DB
+            let timestamp_table_exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='timestamp')",
+                [],
+                |row| row.get(0),
+            )?;
+
+            if timestamp_table_exists {
+                // Legacy Version 0
+                migration::run_migrations(&mut conn)?;
+            } else {
+                // Fresh database
+                Self::create_base_tables(&conn)?;
+                conn.pragma_update(None, "user_version", DATABASE_TARGET_VERSION)?;
+            }
+        } else if current_version < DATABASE_TARGET_VERSION {
+            // Legacy versioned database
+            migration::run_migrations(&mut conn)?;
+        }
+
+        Self::from_connection(conn)
+    }
+
+    fn create_base_tables(conn: &Connection) -> Result<(), DatabaseError> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS timestamp (
+            id              INTEGER PRIMARY KEY,
+            timestamp       INTEGER NOT NULL,
+            sampling_period INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS hardware_info (
+            id                 INTEGER PRIMARY KEY,
+            tables             TEXT,
+            hardware_data      TEXT
+         );
+         CREATE TABLE IF NOT EXISTS component_all_time_data (
+            id              INTEGER PRIMARY KEY,
+            component_name  TEXT UNIQUE NOT NULL,
+            total_energy_uj INTEGER NOT NULL DEFAULT 0
+         );",
+        )?;
+        Ok(())
+    }
+
+    /// Opens the database for the UI without running migrations.
+    pub fn open_without_migrations() -> Result<Self, DatabaseError> {
+        Self::from_connection(Self::open_connection()?)
+    }
+
+    fn open_connection() -> Result<Connection, DatabaseError> {
         let conn = Connection::open(DATABASE_PATH)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "busy_timeout", "5000")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
+        Self::create_settings_table_if_not_exists(&conn)?;
+        Ok(conn)
+    }
 
+    fn create_settings_table_if_not_exists(conn: &Connection) -> Result<(), DatabaseError> {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS ui_settings (
                 id               INTEGER PRIMARY KEY CHECK (id = 1),
@@ -104,7 +200,10 @@ impl Database {
                 theme            TEXT NOT NULL DEFAULT 'Hunting'
             )",
         )?;
+        Ok(())
+    }
 
+    fn from_connection(conn: Connection) -> Result<Self, DatabaseError> {
         let tables = match conn.prepare("SELECT tables FROM hardware_info ORDER BY id DESC LIMIT 1") {
             Err(_) => None,
             Ok(mut stmt) => match stmt.query_row([], |row| row.get::<_, String>(0)).optional() {
@@ -121,35 +220,17 @@ impl Database {
         Ok(Database { conn, tables })
     }
 
+    pub fn user_version(&self) -> Result<i32, DatabaseError> {
+        Ok(self.conn.query_row("PRAGMA user_version", [], |row| row.get(0))?)
+    }
+
+    pub fn is_schema_current(&self) -> Result<bool, DatabaseError> {
+        Ok(self.user_version()? >= DATABASE_TARGET_VERSION)
+    }
+
     /// Creates sensor tables that don't already exist.
     pub fn create_tables_if_not_exists(&mut self, table_names: &[&str]) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS timestamp (
-                  id            INTEGER PRIMARY KEY,
-                  timestamp     INTEGER NOT NULL,
-                  period_type   INTEGER NOT NULL
-                  )",
-            [],
-        )?;
-
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS hardware_info (
-                    id                 INTEGER PRIMARY KEY,
-                    tables             TEXT,
-                    hardware_data      TEXT
-            )",
-            [],
-        )?;
-
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS component_all_time_data (
-                    id              INTEGER PRIMARY KEY,
-                    component_name  TEXT UNIQUE NOT NULL,
-                    total_consumption REAL NOT NULL DEFAULT 0.0
-            )",
-            [],
-        )?;
 
         let mut current_tables = self.tables.clone().unwrap_or_default();
         let mut has_changed = false;
@@ -178,28 +259,28 @@ impl Database {
     pub fn insert_event_and_update_energy(
         &mut self,
         event: &EventDB,
-        since_last_secs: f64,
+        sampling_period: u32,
     ) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
         tx.execute(
-            "INSERT INTO timestamp (timestamp, period_type) VALUES (?1, ?2)",
+            "INSERT INTO timestamp (timestamp, sampling_period) VALUES (?1, ?2)",
             params![
                 event.time().duration_since(SystemTime::UNIX_EPOCH)?.as_millis() as i64,
-                1 as i64
+                sampling_period as i64
             ],
         )?;
         let timestamp_id = tx.last_insert_rowid();
         for sensor_data in event.data() {
             Self::insert_data_db(&tx, &timestamp_id, sensor_data)?;
         }
+
         // Batch energy updates in the same transaction
         for sensor_data in event.data() {
-            if let Some(power) = sensor_data.total_consumption() {
-                let consumption = power * since_last_secs / 3600.0;
+            if let Some(energy) = sensor_data.total_energy() {
                 tx.execute(
-                    "INSERT INTO component_all_time_data (component_name, total_consumption) VALUES (?1, ?2) \
-                     ON CONFLICT(component_name) DO UPDATE SET total_consumption = total_consumption + ?2",
-                    params![sensor_data.table_name(), consumption],
+                    "INSERT INTO component_all_time_data (component_name, total_energy_uj) VALUES (?1, ?2) \
+                     ON CONFLICT(component_name) DO UPDATE SET total_energy_uj = total_energy_uj + ?2",
+                    params![sensor_data.table_name(), energy],
                 )?;
             }
         }
@@ -211,7 +292,7 @@ impl Database {
     pub fn insert_event(&mut self, event: &EventDB) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
         tx.execute(
-            "INSERT INTO timestamp (timestamp, period_type) VALUES (?1, ?2)",
+            "INSERT INTO timestamp (timestamp, sampling_period) VALUES (?1, ?2)",
             params![
                 event.time().duration_since(SystemTime::UNIX_EPOCH)?.as_millis() as i64,
                 1 as i64
@@ -229,20 +310,11 @@ impl Database {
     pub fn insert_hardware_info(&mut self, data: &GeneralDataDB) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
 
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS hardware_info (
-                    id                 INTEGER PRIMARY KEY,
-                    tables             TEXT,
-                    hardware_data      TEXT
-            )",
-            [],
-        )?;
-
         let existing: Option<i64> = tx
             .query_row("SELECT id FROM hardware_info WHERE id = 1", [], |row| row.get(0))
             .optional()?;
 
-        if let Some(_) = existing {
+        if existing.is_some() {
             tx.execute(
                 "UPDATE hardware_info SET tables = ?1, hardware_data = ?2 WHERE id = 1",
                 params![data.tables, data.hardware_info_serialized],
@@ -276,13 +348,13 @@ impl Database {
     pub fn update_component_all_time_data(
         &mut self,
         component_name: &str,
-        consumption: f64,
+        energy: EnergyUj,
     ) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
         tx.execute(
-            "INSERT INTO component_all_time_data (component_name, total_consumption) VALUES (?1, ?2) \
-             ON CONFLICT(component_name) DO UPDATE SET total_consumption = total_consumption + ?2",
-            params![component_name, consumption],
+            "INSERT INTO component_all_time_data (component_name, total_energy_uj) VALUES (?1, ?2) \
+             ON CONFLICT(component_name) DO UPDATE SET total_energy_uj = total_energy_uj + ?2",
+            params![component_name, energy],
         )?;
         tx.commit()?;
         Ok(())
@@ -325,20 +397,7 @@ impl Database {
     }
 
     fn insert_data_db(tx: &Transaction, timestamp_id: &i64, data_db: &DataDB) -> Result<(), DatabaseError> {
-        match data_db {
-            DataDB::Sensor(SensorDataDB::CPU(data)) => Self::insert_entry(tx, timestamp_id, data),
-            DataDB::Sensor(SensorDataDB::GPU(data)) => Self::insert_entry(tx, timestamp_id, data),
-            DataDB::Sensor(SensorDataDB::Ram(data)) => Self::insert_entry(tx, timestamp_id, data),
-            DataDB::Sensor(SensorDataDB::Disk(data)) => Self::insert_entry(tx, timestamp_id, data),
-            DataDB::Sensor(SensorDataDB::Network(data)) => Self::insert_entry(tx, timestamp_id, data),
-            DataDB::Total(data) => Self::insert_entry(tx, timestamp_id, data),
-            DataDB::Process(processes) => {
-                for process in processes {
-                    Self::insert_entry(tx, timestamp_id, process)?;
-                }
-                Ok(())
-            }
-        }
+        match_sensor_variant!(data_db, data => Self::insert_entry(tx, timestamp_id, data))
     }
 
     fn insert_entry<T: DatabaseEntry>(tx: &Transaction, timestamp_id: &i64, entry: &T) -> Result<(), DatabaseError> {
@@ -470,9 +529,9 @@ impl Database {
         let mut components = HashMap::new();
         if let Ok(mut stmt) = self
             .conn
-            .prepare("SELECT component_name, total_consumption FROM component_all_time_data")
+            .prepare("SELECT component_name, total_energy_uj FROM component_all_time_data")
         {
-            if let Ok(rows) = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))) {
+            if let Ok(rows) = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, EnergyUj>(1)?))) {
                 for row in rows.flatten() {
                     components.insert(row.0, row.1);
                 }
@@ -491,25 +550,7 @@ impl Database {
     where
         P: rusqlite::Params,
     {
-        if table_name == CPUDataDB::table_name_static() {
-            self.query_sensor_table::<CPUDataDB, P>(query, params)
-        } else if table_name == GPUDataDB::table_name_static() {
-            self.query_sensor_table::<GPUDataDB, P>(query, params)
-        } else if table_name == RamDataDB::table_name_static() {
-            self.query_sensor_table::<RamDataDB, P>(query, params)
-        } else if table_name == DiskDataDB::table_name_static() {
-            self.query_sensor_table::<DiskDataDB, P>(query, params)
-        } else if table_name == NetworkDataDB::table_name_static() {
-            self.query_sensor_table::<NetworkDataDB, P>(query, params)
-        } else if table_name == TotalDataDB::table_name_static() {
-            self.query_sensor_table::<TotalDataDB, P>(query, params)
-        } else if table_name == AllTimeDataDB::table_name_static() {
-            self.query_sensor_table::<TotalDataDB, P>(query, params)
-        } else if table_name == ProcessDataDB::table_name_static() {
-            self.query_sensor_table::<ProcessDataDB, P>(query, params)
-        } else {
-            Ok(Vec::new())
-        }
+        dispatch_entry!(table_name, self, query_sensor_table, P, (query, params)).unwrap_or_else(|| Ok(Vec::new()))
     }
 
     fn query_sensor_table<T, P>(&self, query: &str, params: P) -> rusqlite::Result<Vec<(i64, DataDB)>>
@@ -561,35 +602,60 @@ impl Database {
                 table_name
             )));
         }
-        let avg_cols = get_windowed_average_columns(table_name, "d.", window_seconds)?;
-        let query = format!(
-            "SELECT
-                (t.timestamp / (?2 * 1000)) * (?2 * 1000) AS window_start,
-                {}
-             FROM timestamp t
-             JOIN {} d ON t.id = d.timestamp_id
-             WHERE t.timestamp >= ?1 AND t.timestamp < ?3
-             GROUP BY window_start
-             ORDER BY window_start ASC",
-            avg_cols, table_name
-        );
+        let live_cols = get_windowed_columns(table_name, "d.", window_seconds, WindowedSource::Live)?;
+        let hourly_cols = get_windowed_columns(table_name, "d.", window_seconds, WindowedSource::Hourly)?;
+        let query = |cols: &str| {
+            format!(
+                "SELECT \
+                    (t.timestamp / (?2 * 1000)) * (?2 * 1000) AS window_start, \
+                    {} \
+                 FROM timestamp t \
+                 JOIN {} d ON t.id = d.timestamp_id \
+                 WHERE t.timestamp >= ?1 AND t.timestamp < ?3 \
+                   AND t.sampling_period = ?4 \
+                 GROUP BY window_start \
+                 ORDER BY window_start ASC",
+                cols, table_name
+            )
+        };
 
-        let rows = self.execute_data_query(
+        let live_rows = self.execute_data_query(
             table_name,
-            &query,
-            params![start_window_start, window_seconds, end_exclusive],
+            &query(&live_cols),
+            params![
+                start_window_start,
+                window_seconds,
+                end_exclusive,
+                LIVE_SAMPLING_PERIOD_SECONDS
+            ],
+        )?;
+        let hourly_rows = self.execute_data_query(
+            table_name,
+            &query(&hourly_cols),
+            params![
+                start_window_start,
+                window_seconds,
+                end_exclusive,
+                HOURLY_SAMPLING_PERIOD_SECONDS
+            ],
         )?;
 
-        let mut by_window = HashMap::new();
-        for (window_start, data) in rows {
-            by_window.insert(window_start, data);
+        let mut live_by_window = HashMap::new();
+        for (window_start, data) in live_rows {
+            live_by_window.insert(window_start, data);
+        }
+
+        let mut hourly_by_window = HashMap::new();
+        for (window_start, data) in hourly_rows {
+            hourly_by_window.insert(window_start, data);
         }
 
         let mut filled = Vec::new();
         let mut current = start_window_start;
         while current < end_exclusive {
-            let data = by_window
+            let data = live_by_window
                 .remove(&current)
+                .or_else(|| hourly_by_window.remove(&current))
                 .or_else(|| zero_sensor_data(table_name))
                 .ok_or_else(|| {
                     DatabaseError::QueryError(format!("Unsupported table for windowed average: {}", table_name))
@@ -607,40 +673,48 @@ impl Database {
         end_exclusive: i64,
         window_seconds: i64,
     ) -> Result<Vec<(i64, DataDB)>, DatabaseError> {
-        let second_query = "SELECT
-                (t.timestamp / (?2 * 1000)) * (?2 * 1000) AS window_start,
-                SUM(COALESCE(d.total_consumption, 0.0)) / ?2 AS total_consumption,
-                'second' AS period_type
-             FROM timestamp t
-             JOIN total_data d ON t.id = d.timestamp_id
-             WHERE d.period_type = 'second'
-               AND t.timestamp >= ?1
-               AND t.timestamp < ?3
-             GROUP BY window_start
+        let second_query = "SELECT \
+                (t.timestamp / (?2 * 1000)) * (?2 * 1000) AS window_start, \
+                CAST(SUM(COALESCE(d.total_energy_uj, 0)) / ?2 AS INTEGER) AS total_energy_uj \
+             FROM timestamp t \
+             JOIN total_data d ON t.id = d.timestamp_id \
+             WHERE t.sampling_period = ?4 \
+               AND t.timestamp >= ?1 \
+               AND t.timestamp < ?3 \
+             GROUP BY window_start \
              ORDER BY window_start ASC";
 
-        let hour_query = "SELECT
-                (t.timestamp / (?2 * 1000)) * (?2 * 1000) AS window_start,
-                AVG(COALESCE(d.total_consumption, 0.0)) AS total_consumption,
-                'hour' AS period_type
-             FROM timestamp t
-             JOIN total_data d ON t.id = d.timestamp_id
-             WHERE d.period_type = 'hour'
-               AND t.timestamp >= ?1
-               AND t.timestamp < ?3
-             GROUP BY window_start
+        let hour_query = "SELECT \
+                (t.timestamp / (?2 * 1000)) * (?2 * 1000) AS window_start, \
+                CAST(AVG(COALESCE(d.total_energy_uj, 0)) / ?4 AS INTEGER) AS total_energy_uj \
+             FROM timestamp t \
+             JOIN total_data d ON t.id = d.timestamp_id \
+             WHERE t.sampling_period = ?4 \
+               AND t.timestamp >= ?1 \
+               AND t.timestamp < ?3 \
+             GROUP BY window_start \
              ORDER BY window_start ASC";
 
         let second_rows = self.execute_data_query(
             TotalDataDB::table_name_static(),
             second_query,
-            params![start_window_start, window_seconds, end_exclusive],
+            params![
+                start_window_start,
+                window_seconds,
+                end_exclusive,
+                LIVE_SAMPLING_PERIOD_SECONDS
+            ],
         )?;
 
         let hour_rows = self.execute_data_query(
             TotalDataDB::table_name_static(),
             hour_query,
-            params![start_window_start, window_seconds, end_exclusive],
+            params![
+                start_window_start,
+                window_seconds,
+                end_exclusive,
+                HOURLY_SAMPLING_PERIOD_SECONDS
+            ],
         )?;
 
         let mut second_by_window = HashMap::new();
@@ -662,12 +736,7 @@ impl Database {
                 hour_data
             } else {
                 DataDB::Total(TotalDataDB {
-                    total_consumption: 0.0,
-                    period_type: if window_seconds >= 3600 {
-                        "hour".to_string()
-                    } else {
-                        "second".to_string()
-                    },
+                    total_energy: EnergyUj::from_u64(0),
                 })
             };
 
@@ -683,94 +752,67 @@ impl Database {
         &self,
         n_seconds: i64,
         top_n: usize,
-        energy_mode: bool,
     ) -> Result<Vec<(SystemTime, DataDB)>, DatabaseError> {
-        if n_seconds <= 0 {
+        if n_seconds == 0 {
             return Ok(vec![(SystemTime::now(), DataDB::Process(Vec::new()))]);
         }
 
         let now_ms = to_epoch_millis(SystemTime::now())?;
         let start = now_ms - n_seconds * 1000;
 
-        let query = if energy_mode {
-            // Energy mode: combine second-level and hour-level data.
-            // Second rows: each row = 1 s → power/3600 = Wh contribution.
-            // Hour rows:   each row = 1 h of averaged power → value IS Wh.
-            // CPU/GPU/RAM/disk are "unfolded" so the final AVG = time-weighted avg
-            // (missing time = 0).
-            "SELECT
-                ?2 AS timestamp,
-                combined.app_name AS app_name,
-                MAX(combined.process_exe_path) AS process_exe_path,
-                SUM(combined.process_consumption) AS process_consumption,
-                SUM(combined.cpu_contrib) / ?4 AS process_cpu_usage,
-                SUM(combined.gpu_contrib) / ?4 AS process_gpu_usage,
-                SUM(combined.mem_contrib) / ?4 AS process_mem_usage,
-                SUM(combined.read_contrib) / ?4 AS read_bytes_per_sec,
-                SUM(combined.write_contrib) / ?4 AS written_bytes_per_sec,
-                MAX(combined.subprocess_count) AS subprocess_count
-             FROM (
-                 SELECT
-                     p.app_name,
-                     p.process_exe_path,
-                     COALESCE(p.process_consumption, 0.0) / 3600.0 AS process_consumption,
-                     COALESCE(p.process_cpu_usage, 0.0) AS cpu_contrib,
-                     COALESCE(p.process_gpu_usage, 0.0) AS gpu_contrib,
-                     COALESCE(p.process_mem_usage, 0.0) AS mem_contrib,
-                     COALESCE(p.read_bytes_per_sec, 0.0) AS read_contrib,
-                     COALESCE(p.written_bytes_per_sec, 0.0) AS write_contrib,
-                     p.subprocess_count
-                 FROM timestamp t
-                 JOIN process_data p ON t.id = p.timestamp_id
-                 WHERE t.period_type = 1
-                   AND t.timestamp >= ?1 AND t.timestamp < ?2
-                 UNION ALL
-                 SELECT
-                     p.app_name,
-                     p.process_exe_path,
-                     COALESCE(p.process_consumption, 0.0) AS process_consumption,
-                     COALESCE(p.process_cpu_usage, 0.0) * 3600.0 AS cpu_contrib,
-                     COALESCE(p.process_gpu_usage, 0.0) * 3600.0 AS gpu_contrib,
-                     COALESCE(p.process_mem_usage, 0.0) * 3600.0 AS mem_contrib,
-                     COALESCE(p.read_bytes_per_sec, 0.0) * 3600.0 AS read_contrib,
-                     COALESCE(p.written_bytes_per_sec, 0.0) * 3600.0 AS write_contrib,
-                     p.subprocess_count
-                 FROM timestamp t
-                 JOIN process_data p ON t.id = p.timestamp_id
-                 WHERE t.period_type = 3600
-                   AND t.timestamp >= ?1 AND t.timestamp < ?2
-             ) combined
-             GROUP BY combined.app_name
-             ORDER BY process_consumption DESC
-             LIMIT ?3"
-                .to_string()
-        } else {
-            // Average mode: only second-level data, simple average.
-            "SELECT
-                ?2 AS timestamp,
-                p.app_name AS app_name,
-                MAX(p.process_exe_path) AS process_exe_path,
-                SUM(COALESCE(p.process_consumption, 0.0)) / ?4 AS process_consumption,
-                SUM(COALESCE(p.process_cpu_usage, 0.0)) / ?4 AS process_cpu_usage,
-                SUM(COALESCE(p.process_gpu_usage, 0.0)) / ?4 AS process_gpu_usage,
-                SUM(COALESCE(p.process_mem_usage, 0.0)) / ?4 AS process_mem_usage,
-                SUM(COALESCE(p.read_bytes_per_sec, 0.0)) / ?4 AS read_bytes_per_sec,
-                SUM(COALESCE(p.written_bytes_per_sec, 0.0)) / ?4 AS written_bytes_per_sec,
-                MAX(p.subprocess_count) AS subprocess_count
-             FROM timestamp t
-             JOIN process_data p ON t.id = p.timestamp_id
-             WHERE t.period_type = 1
-               AND t.timestamp >= ?1 AND t.timestamp < ?2
-             GROUP BY p.app_name
-             ORDER BY process_consumption DESC
-             LIMIT ?3"
-                .to_string()
-        };
+        let query = "SELECT \
+                ?2 AS timestamp, \
+                combined.app_name AS app_name, \
+                MAX(combined.process_exe_path) AS process_exe_path, \
+                CAST(SUM(combined.energy_uj) AS INTEGER) AS process_energy_uj, \
+                SUM(combined.cpu_contrib)  / ?4 AS process_cpu_usage, \
+                SUM(combined.gpu_contrib)  / ?4 AS process_gpu_usage, \
+                SUM(combined.mem_contrib)  / ?4 AS process_mem_usage, \
+                CAST(SUM(combined.read_contrib)  / ?4 AS INTEGER) AS read_bytes, \
+                CAST(SUM(combined.write_contrib) / ?4 AS INTEGER) AS written_bytes, \
+                CAST(MAX(combined.subprocess_count) AS INTEGER) AS subprocess_count \
+             FROM ( \
+                 SELECT \
+                     p.app_name, p.process_exe_path, \
+                     COALESCE(p.process_energy_uj, 0) AS energy_uj, \
+                     COALESCE(p.process_cpu_usage, 0.0) AS cpu_contrib, \
+                     COALESCE(p.process_gpu_usage, 0.0) AS gpu_contrib, \
+                     COALESCE(p.process_mem_usage, 0.0) AS mem_contrib, \
+                     COALESCE(p.read_bytes,    0) AS read_contrib, \
+                     COALESCE(p.written_bytes, 0) AS write_contrib, \
+                     p.subprocess_count \
+                 FROM timestamp t JOIN process_data p ON t.id = p.timestamp_id \
+                 WHERE t.sampling_period = ?5 \
+                   AND t.timestamp >= ?1 AND t.timestamp < ?2 \
+                 UNION ALL \
+                 SELECT \
+                     p.app_name, p.process_exe_path, \
+                     COALESCE(p.process_energy_uj, 0) AS energy_uj, \
+                     COALESCE(p.process_cpu_usage, 0.0) * ?6 AS cpu_contrib, \
+                     COALESCE(p.process_gpu_usage, 0.0) * ?6 AS gpu_contrib, \
+                     COALESCE(p.process_mem_usage, 0.0) * ?6 AS mem_contrib, \
+                     COALESCE(p.read_bytes, 0) AS read_contrib, \
+                     COALESCE(p.written_bytes, 0) AS write_contrib, \
+                     p.subprocess_count \
+                 FROM timestamp t JOIN process_data p ON t.id = p.timestamp_id \
+                 WHERE t.sampling_period = ?6 \
+                   AND t.timestamp >= ?1 AND t.timestamp < ?2 \
+             ) combined \
+             GROUP BY combined.app_name \
+             ORDER BY process_energy_uj DESC \
+             LIMIT ?3";
 
         let rows = self.execute_data_query(
             ProcessDataDB::table_name_static(),
-            &query,
-            params![start, now_ms, top_n as i64, n_seconds as f64],
+            query,
+            rusqlite::params![
+                start,
+                now_ms,
+                top_n as i64,
+                n_seconds as f64,
+                LIVE_SAMPLING_PERIOD_SECONDS,
+                HOURLY_SAMPLING_PERIOD_SECONDS
+            ],
         )?;
 
         let mut processes = Vec::new();
@@ -779,26 +821,65 @@ impl Database {
                 processes.append(&mut proc_data);
             }
         }
-        Ok(vec![(from_epoch_millis(now_ms), DataDB::Process(processes))])
+        Ok(vec![(from_epoch_millis(now_ms as i64), DataDB::Process(processes))])
     }
 }
 
-fn get_windowed_average_columns(table_name: &str, prefix: &str, window_seconds: i64) -> Result<String, DatabaseError> {
+#[derive(Clone, Copy)]
+enum WindowedSource {
+    Live,
+    Hourly,
+}
+
+fn get_windowed_columns(
+    table_name: &str,
+    prefix: &str,
+    window_seconds: i64,
+    source: WindowedSource,
+) -> Result<String, DatabaseError> {
     let columns = dispatch_entry!(table_name, columns_static())
         .ok_or_else(|| DatabaseError::QueryError(format!("Unknown table for average columns: {}", table_name)))?;
 
     let aggregated = columns
         .iter()
-        .map(|(name, _)| {
-            format!(
-                "SUM(COALESCE({}{}, 0.0)) / {} AS {}",
-                prefix, name, window_seconds, name
-            )
-        })
+        .map(|(name, sql_type)| windowed_column_expr(prefix, name, sql_type, window_seconds, source))
         .collect::<Vec<_>>()
         .join(", ");
 
     Ok(aggregated)
+}
+
+fn windowed_column_expr(
+    prefix: &str,
+    name: &str,
+    sql_type: &str,
+    window_seconds: i64,
+    source: WindowedSource,
+) -> String {
+    let qualified = format!("{prefix}{name}");
+    // Aggregation semantics are inferred from the column-name suffix:
+    //   _percent → simple average (already a ratio, no time weighting needed)
+    //   _uj      → energy; sum live records and normalize per second
+    //   _bytes   → byte rate; live records sum/normalize, hourly records are
+    //              already per-second averages so a plain AVG is correct
+    //   anything else → plain average
+    let expr = if name.ends_with("_percent") {
+        format!("AVG({qualified})")
+    } else if name.ends_with("_uj") {
+        format!("SUM(COALESCE({qualified}, 0)) / {window_seconds}")
+    } else if name.ends_with("_bytes") {
+        match source {
+            WindowedSource::Live => format!("SUM(COALESCE({qualified}, 0)) / {window_seconds}"),
+            WindowedSource::Hourly => format!("AVG(COALESCE({qualified}, 0))"),
+        }
+    } else {
+        format!("AVG({qualified})")
+    };
+    if sql_type.contains("INTEGER") {
+        format!("CAST({expr} AS INTEGER) AS {name}")
+    } else {
+        format!("{expr} AS {name}")
+    }
 }
 
 fn zero_sensor_data(table_name: &str) -> Option<DataDB> {
@@ -810,7 +891,7 @@ fn to_epoch_millis(ts: SystemTime) -> Result<i64, DatabaseError> {
 }
 
 fn from_epoch_millis(ts_millis: i64) -> SystemTime {
-    SystemTime::UNIX_EPOCH + time::Duration::from_millis(ts_millis as u64)
+    SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ts_millis as u64)
 }
 
 fn to_system_time_records(records: Vec<(i64, DataDB)>) -> Vec<(SystemTime, DataDB)> {

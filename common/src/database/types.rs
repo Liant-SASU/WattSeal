@@ -1,11 +1,45 @@
 use std::{fmt::Display, time::SystemTime};
 
+use rusqlite::{
+    ToSql,
+    types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AllTimeData, CPUData, DatabaseEntry, DiskData, EnergyUJ, EnergyWH, GPUData, GeneralData, NetworkData, PowerWatt,
-    RamData, SensorData, SensorKind,
+    AllTimeData, Byte, CPUData, DatabaseEntry, DiskData, EnergyUj, GPUData, GeneralData, NetworkData, RamData,
+    SensorData, SensorKind,
 };
+
+impl ToSql for EnergyUj {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.as_u64() as i64))
+    }
+}
+
+impl FromSql for EnergyUj {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        value
+            .as_i64()
+            .map(|v| EnergyUj::from_u64(v as u64))
+            .map_err(|e| FromSqlError::Other(Box::new(e)))
+    }
+}
+
+impl ToSql for Byte {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.as_u64() as i64))
+    }
+}
+
+impl FromSql for Byte {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        value
+            .as_i64()
+            .map(|v| Byte::from(v as u64))
+            .map_err(|e| FromSqlError::Other(Box::new(e)))
+    }
+}
 
 /// Sensors data for database
 pub struct EventDB {
@@ -13,13 +47,13 @@ pub struct EventDB {
     data: Vec<DataDB>,
 }
 
-pub type CPUDataDB = CPUData<EnergyWH>;
-pub type GPUDataDB = GPUData<EnergyWH>;
-pub type RamDataDB = RamData<EnergyWH>;
-pub type DiskDataDB = DiskData<EnergyWH>;
-pub type NetworkDataDB = NetworkData<EnergyWH>;
-pub type SensorDataDB = SensorData<EnergyWH>;
-pub type AllTimeDataDB = AllTimeData<EnergyWH>;
+pub type CPUDataDB = CPUData<EnergyUj>;
+pub type GPUDataDB = GPUData<EnergyUj>;
+pub type RamDataDB = RamData<EnergyUj>;
+pub type DiskDataDB = DiskData<EnergyUj>;
+pub type NetworkDataDB = NetworkData<EnergyUj>;
+pub type SensorDataDB = SensorData<EnergyUj>;
+pub type AllTimeDataDB = AllTimeData<EnergyUj>;
 
 // Sensors dependant data used in database.
 #[derive(Debug, Clone)]
@@ -38,25 +72,24 @@ pub struct IconData {
 }
 
 /// Per-application resource usage snapshot.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProcessDataDB {
     pub app_name: String,
     pub process_exe_path: Option<String>,
-    pub process_consumption: EnergyWH,
+    pub process_energy: EnergyUj,
     pub process_cpu_usage: f64,
     pub process_gpu_usage: Option<f64>,
     pub process_mem_usage: f64,
-    pub read_bytes_per_sec: f64,
-    pub written_bytes_per_sec: f64,
+    pub read_bytes: Byte,
+    pub written_bytes: Byte,
     pub subprocess_count: u32,
     pub icon: Option<IconData>,
 }
 
 /// Aggregated total consumption across all components.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TotalDataDB {
-    pub total_consumption: EnergyWH,
-    pub period_type: String,
+    pub total_energy: EnergyUj,
 }
 
 #[derive(Debug)]
@@ -151,9 +184,9 @@ impl From<TotalDataDB> for DataDB {
     }
 }
 
-impl From<&SensorData<EnergyUJ>> for DataDB {
-    fn from(sensor_data: &SensorData<EnergyUJ>) -> Self {
-        DataDB::Sensor(sensor_data.to_wh())
+impl From<&SensorData<EnergyUj>> for DataDB {
+    fn from(sensor_data: &SensorData<EnergyUj>) -> Self {
+        DataDB::Sensor(sensor_data.clone())
     }
 }
 
@@ -177,10 +210,10 @@ impl From<GeneralData> for GeneralDataDB {
 
 impl DataDB {
     /// Returns the total consumption value, if available.
-    pub fn total_consumption(&self) -> Option<PowerWatt> {
+    pub fn total_energy(&self) -> Option<EnergyUj> {
         match self {
-            DataDB::Sensor(s) => s.total_consumption(),
-            DataDB::Total(power) => Some(power.total_consumption.clone()),
+            DataDB::Sensor(s) => s.total_energy(),
+            DataDB::Total(power) => Some(power.total_energy.clone()),
             DataDB::Process(_) => None,
         }
     }
@@ -218,15 +251,15 @@ impl DataDB {
                 SensorData::Disk(data) => Some(SecondaryValues::from_labeled_values(
                     metric_type,
                     vec![
-                        LabeledValue::from_mb_s(Some(data.read_usage_mb_s), "Read"),
-                        LabeledValue::from_mb_s(Some(data.write_usage_mb_s), "Write"),
+                        LabeledValue::from_mb_s(Some(data.read_bytes.as_mb()), "Read"),
+                        LabeledValue::from_mb_s(Some(data.written_bytes.as_mb()), "Write"),
                     ],
                 )),
                 SensorData::Network(data) => Some(SecondaryValues::from_labeled_values(
                     metric_type,
                     vec![
-                        LabeledValue::from_mb_s(Some(data.download_speed_mb_s), "Download"),
-                        LabeledValue::from_mb_s(Some(data.upload_speed_mb_s), "Upload"),
+                        LabeledValue::from_mb_s(Some(data.downloaded_bytes.as_mb()), "Download"),
+                        LabeledValue::from_mb_s(Some(data.uploaded_bytes.as_mb()), "Upload"),
                     ],
                 )),
             }
@@ -247,23 +280,20 @@ impl DataDB {
         }
     }
 
-    pub fn power_to_energy(&mut self, factor: f64) {
+    /// Scales all energy fields by `factor`.
+    pub fn scale_energy(&mut self, factor: f64) {
         match self {
-            DataDB::Sensor(SensorData::CPU(d)) => d.total_consumption = d.total_consumption.clone().map(|w| w * factor),
-            DataDB::Sensor(SensorData::GPU(d)) => d.total_consumption = d.total_consumption.clone().map(|w| w * factor),
-            DataDB::Sensor(SensorData::Ram(d)) => d.total_consumption = d.total_consumption.clone().map(|w| w * factor),
-            DataDB::Sensor(SensorData::Disk(d)) => {
-                d.total_consumption = d.total_consumption.clone().map(|w| w * factor)
-            }
-            DataDB::Sensor(SensorData::Network(d)) => {
-                d.total_consumption = d.total_consumption.clone().map(|w| w * factor)
-            }
+            DataDB::Sensor(SensorData::CPU(d)) => d.total_energy = d.total_energy.clone().map(|w| w * factor),
+            DataDB::Sensor(SensorData::GPU(d)) => d.total_energy = d.total_energy.clone().map(|w| w * factor),
+            DataDB::Sensor(SensorData::Ram(d)) => d.total_energy = d.total_energy.clone().map(|w| w * factor),
+            DataDB::Sensor(SensorData::Disk(d)) => d.total_energy = d.total_energy.clone().map(|w| w * factor),
+            DataDB::Sensor(SensorData::Network(d)) => d.total_energy = d.total_energy.clone().map(|w| w * factor),
             DataDB::Total(d) => {
-                d.total_consumption *= factor;
+                d.total_energy *= factor;
             }
             DataDB::Process(procs) => {
                 for p in procs {
-                    p.process_consumption *= factor;
+                    p.process_energy *= factor;
                 }
             }
         }
@@ -287,10 +317,10 @@ impl DataKindDB {
 impl Default for CPUDataDB {
     fn default() -> Self {
         CPUDataDB {
-            total_consumption: Some(0.0),
-            pp0_consumption: Some(0.0),
-            pp1_consumption: Some(0.0),
-            dram_consumption: Some(0.0),
+            total_energy: Some(EnergyUj::from_u64(0)),
+            pp0_energy: Some(EnergyUj::from_u64(0)),
+            pp1_energy: Some(EnergyUj::from_u64(0)),
+            dram_energy: Some(EnergyUj::from_u64(0)),
             usage_percent: Some(0.0),
         }
     }
@@ -299,7 +329,7 @@ impl Default for CPUDataDB {
 impl Default for GPUDataDB {
     fn default() -> Self {
         GPUDataDB {
-            total_consumption: Some(0.0),
+            total_energy: Some(EnergyUj::from_u64(0)),
             usage_percent: Some(0.0),
             vram_usage_percent: Some(0.0),
         }
@@ -309,7 +339,7 @@ impl Default for GPUDataDB {
 impl Default for RamDataDB {
     fn default() -> Self {
         RamDataDB {
-            total_consumption: Some(0.0),
+            total_energy: Some(EnergyUj::from_u64(0)),
             usage_percent: Some(0.0),
         }
     }
@@ -318,9 +348,9 @@ impl Default for RamDataDB {
 impl Default for DiskDataDB {
     fn default() -> Self {
         DiskDataDB {
-            total_consumption: Some(0.0),
-            read_usage_mb_s: 0.0,
-            write_usage_mb_s: 0.0,
+            total_energy: Some(EnergyUj::from_u64(0)),
+            read_bytes: Byte::from(0),
+            written_bytes: Byte::from(0),
         }
     }
 }
@@ -328,9 +358,9 @@ impl Default for DiskDataDB {
 impl Default for NetworkDataDB {
     fn default() -> Self {
         NetworkDataDB {
-            total_consumption: Some(0.0),
-            download_speed_mb_s: 0.0,
-            upload_speed_mb_s: 0.0,
+            total_energy: Some(EnergyUj::from_u64(0)),
+            downloaded_bytes: Byte::from(0),
+            uploaded_bytes: Byte::from(0),
         }
     }
 }
@@ -340,12 +370,12 @@ impl Default for ProcessDataDB {
         ProcessDataDB {
             app_name: String::new(),
             process_exe_path: None,
-            process_consumption: 0.0,
+            process_energy: EnergyUj::from_u64(0),
             process_cpu_usage: 0.0,
             process_gpu_usage: None,
             process_mem_usage: 0.0,
-            read_bytes_per_sec: 0.0,
-            written_bytes_per_sec: 0.0,
+            read_bytes: Byte::from(0),
+            written_bytes: Byte::from(0),
             subprocess_count: 0,
             icon: None,
         }
@@ -355,8 +385,7 @@ impl Default for ProcessDataDB {
 impl Default for TotalDataDB {
     fn default() -> Self {
         TotalDataDB {
-            total_consumption: 0.0,
-            period_type: "second".to_string(),
+            total_energy: EnergyUj::from_u64(0),
         }
     }
 }
@@ -390,18 +419,20 @@ impl Display for DataDB {
 
 impl Display for ProcessDataDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Force conversion for alignment
+        let energy_str = self.process_energy.to_string();
         writeln!(
             f,
-            "{:<30} {:>10.2} {:>10} {:>10.2} {:>10} W {:>15.2} {:>15.2} {:>20}",
+            "{:<30.30} {:>10.2} {:>10} {:>10.2} {:>16} {:>15.2} {:>15.2} {:>20}",
             self.app_name,
             self.process_cpu_usage,
             self.process_gpu_usage
                 .map(|u| format!("{:.2} %", u))
                 .unwrap_or_else(|| "N/A".to_string()),
             self.process_mem_usage,
-            self.process_consumption,
-            self.read_bytes_per_sec / 1_000_000.0,    // Convert to MB/s
-            self.written_bytes_per_sec / 1_000_000.0, // Convert to MB/s
+            energy_str,
+            self.read_bytes.as_mb(),
+            self.written_bytes.as_mb(),
             self.subprocess_count
         )?;
         Ok(())
@@ -410,11 +441,7 @@ impl Display for ProcessDataDB {
 
 impl Display for TotalDataDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "Total Power during 1 {}: {:.3} W",
-            self.period_type, self.total_consumption
-        )?;
+        writeln!(f, "Total Energy: {}", self.total_energy)?;
         Ok(())
     }
 }
@@ -423,7 +450,7 @@ impl Display for TotalDataDB {
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum MetricKindDB {
     #[default]
-    Energy,
+    Power,
     Usage,
     Speed,
 }
@@ -431,7 +458,7 @@ pub enum MetricKindDB {
 impl Display for MetricKindDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MetricKindDB::Energy => write!(f, "Energy"),
+            MetricKindDB::Power => write!(f, "Power"),
             MetricKindDB::Usage => write!(f, "Usage"),
             MetricKindDB::Speed => write!(f, "Speed"),
         }
@@ -442,7 +469,7 @@ impl MetricKindDB {
     /// Returns the human-readable label.
     pub fn label(&self) -> &'static str {
         match self {
-            MetricKindDB::Energy => "Energy",
+            MetricKindDB::Power => "Power",
             MetricKindDB::Usage => "Usage",
             MetricKindDB::Speed => "Speed",
         }
@@ -451,7 +478,7 @@ impl MetricKindDB {
     /// Returns the measurement unit string.
     pub fn unit_label(&self) -> &'static str {
         match self {
-            MetricKindDB::Energy => "Wh",
+            MetricKindDB::Power => "W",
             MetricKindDB::Usage => "%",
             MetricKindDB::Speed => "MB/s",
         }
@@ -464,8 +491,8 @@ impl MetricKindDB {
 
     /// Returns the display unit, swapping uj for Wh when energy mode, and W otherwise.
     pub fn effective_unit(&self, energy_mode: bool) -> &'static str {
-        if *self == MetricKindDB::Energy {
-            if energy_mode { "Wh" } else { "W" }
+        if *self == MetricKindDB::Power && energy_mode {
+            "Wh"
         } else {
             self.unit_label()
         }
