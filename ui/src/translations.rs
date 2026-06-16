@@ -74,6 +74,24 @@ pub fn current_power_consumption(language: AppLanguage) -> &'static str {
     }
 }
 
+pub fn database_migrating_title(language: AppLanguage) -> &'static str {
+    match language {
+        AppLanguage::English => "Preparing database",
+        AppLanguage::French => "Préparation de la base de données",
+    }
+}
+
+pub fn database_migrating_description(language: AppLanguage) -> &'static str {
+    match language {
+        AppLanguage::English => {
+            "WattSeal is waiting for the collector to finish migrating the database. Retrying every second…"
+        }
+        AppLanguage::French => {
+            "WattSeal attend que le collecteur termine la migration de la base de données. Nouvel essai chaque seconde…"
+        }
+    }
+}
+
 pub fn all_time(language: AppLanguage) -> &'static str {
     match language {
         AppLanguage::English => "All Time",
@@ -536,7 +554,7 @@ pub fn metric_speed(language: AppLanguage) -> &'static str {
 
 pub fn metric_kind_name(language: AppLanguage, metric: MetricKindDB) -> &'static str {
     match metric {
-        MetricKindDB::Energy => metric_power(language),
+        MetricKindDB::Power => metric_power(language),
         MetricKindDB::Usage => metric_usage(language),
         MetricKindDB::Speed => metric_speed(language),
     }

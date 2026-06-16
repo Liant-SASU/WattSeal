@@ -7,9 +7,8 @@ use std::{
 
 use chrono::{DateTime, Duration, Local, Timelike};
 use common::{
-    DataDB, DatabaseEntry, DiskDataDB, IconData, MetricKindDB, NetworkDataDB, ProcessDataDB, RamDataDB,
-    SecondaryValues, TotalDataDB,
-    utils::{bytes_to_mb, load_icon_and_name},
+    DataDB, DatabaseEntry, DiskDataDB, EnergyUj, IconData, MetricKindDB, NetworkDataDB, ProcessDataDB, RamDataDB,
+    SecondaryValues, TotalDataDB, database::LIVE_SAMPLING_PERIOD_SECONDS, utils::load_icon_and_name,
 };
 use iced::{
     Alignment, ContentFit, Element, Length, Padding, Task,
@@ -142,9 +141,10 @@ impl ComponentState {
         }
     }
 
-    fn append(&mut self, timestamp: DateTime<Local>, data: &DataDB) {
-        if let Some(power) = data.total_consumption() {
-            self.power_graph.append_power(timestamp, power as f32);
+    fn append(&mut self, timestamp: DateTime<Local>, data: &DataDB, time_range: &TimeRange) {
+        if let Some(energy) = data.total_energy() {
+            self.power_graph
+                .append_power(timestamp, chart_power_or_energy(energy, time_range) as f32);
         }
         if let Some(secondary_values) = data.secondary_values() {
             self.extend_secondary_histories(secondary_values.values.len());
@@ -194,7 +194,7 @@ impl ComponentState {
             .chart
             .set_y_axis_unit(metric_kind.effective_unit(energy_mode));
         match metric_kind {
-            MetricKindDB::Energy => {
+            MetricKindDB::Power => {
                 let key = metric_kind.legend(display_name);
                 let display = metric_kind_name(language, metric_kind);
                 self.power_graph.chart.add_series(
@@ -284,9 +284,10 @@ impl TotalState {
         }
     }
 
-    fn append(&self, timestamp: DateTime<Local>, data: &DataDB) {
-        if let Some(power) = data.total_consumption() {
-            self.power_graph.append_power(timestamp, power as f32);
+    fn append(&self, timestamp: DateTime<Local>, data: &DataDB, time_range: &TimeRange) {
+        if let Some(energy) = data.total_energy() {
+            self.power_graph
+                .append_power(timestamp, chart_power_or_energy(energy, time_range) as f32);
         }
     }
 
@@ -456,10 +457,10 @@ impl SensorState {
         match &mut self.sensor_category {
             SensorCategory::Component(s) => {
                 s.power_graph.apply_time_settings(line_type, unit, duration);
-                if s.metric_kind == MetricKindDB::Energy {
+                if s.metric_kind == MetricKindDB::Power {
                     s.power_graph
                         .chart
-                        .set_y_axis_unit(MetricKindDB::Energy.effective_unit(energy_mode));
+                        .set_y_axis_unit(MetricKindDB::Power.effective_unit(energy_mode));
                     s.power_graph
                         .chart
                         .set_all_display_labels(power_or_energy(self.language, energy_mode));
@@ -469,7 +470,7 @@ impl SensorState {
                 s.power_graph.apply_time_settings(line_type, unit, duration);
                 s.power_graph
                     .chart
-                    .set_y_axis_unit(MetricKindDB::Energy.effective_unit(energy_mode));
+                    .set_y_axis_unit(MetricKindDB::Power.effective_unit(energy_mode));
                 s.power_graph.chart.set_all_line_types(line_type);
                 s.power_graph
                     .chart
@@ -519,14 +520,14 @@ impl SensorState {
             match &mut self.sensor_category {
                 SensorCategory::Component(state) => {
                     if state.is_newer_than_latest(timestamp) {
-                        state.append(timestamp, data);
+                        state.append(timestamp, data, &self.time_range);
                     }
                     state.prune_before(timestamp - self.time_range.duration_seconds());
                     state.power_graph.chart.refresh_cache();
                 }
                 SensorCategory::Total(state) => {
                     if state.is_newer_than_latest(timestamp) {
-                        state.append(timestamp, data);
+                        state.append(timestamp, data, &self.time_range);
                     }
                     state.prune_before(timestamp - self.time_range.duration_seconds());
                     state.power_graph.chart.refresh_cache();
@@ -540,8 +541,8 @@ impl SensorState {
     pub fn push_to_history_only(&mut self, timestamp: DateTime<Local>, data: &DataDB) {
         let timestamp = timestamp.with_nanosecond(0).unwrap_or(timestamp);
         match &mut self.sensor_category {
-            SensorCategory::Component(state) => state.append(timestamp, data),
-            SensorCategory::Total(state) => state.append(timestamp, data),
+            SensorCategory::Component(state) => state.append(timestamp, data, &self.time_range),
+            SensorCategory::Total(state) => state.append(timestamp, data, &self.time_range),
             SensorCategory::Processes(_) => {}
         }
     }
@@ -833,7 +834,11 @@ impl SensorState {
                         true,
                     ))
                     .push(text_widget(
-                        format!("{:.1}{}", p.process_consumption, unit_str),
+                        format!(
+                            "{:.1}{}",
+                            process_power_or_energy(p.process_energy, &self.time_range),
+                            unit_str
+                        ),
                         table_font_size,
                         TextStyle::Primary,
                         Length::Fixed(PROCESS_POWER_WIDTH),
@@ -861,14 +866,14 @@ impl SensorState {
                         false,
                     ))
                     .push(text_widget(
-                        format!("{:.1}MB/s", bytes_to_mb(p.read_bytes_per_sec)),
+                        format!("{:.1}MB/s", p.read_bytes.as_mb()),
                         table_font_size,
                         TextStyle::Secondary,
                         Length::Fixed(PROCESS_DISK_READ_WIDTH),
                         false,
                     ))
                     .push(text_widget(
-                        format!("{:.1}MB/s", bytes_to_mb(p.written_bytes_per_sec)),
+                        format!("{:.1}MB/s", p.written_bytes.as_mb()),
                         table_font_size,
                         TextStyle::Tertiary,
                         Length::Fixed(PROCESS_DISK_WRITE_WIDTH),
@@ -901,7 +906,11 @@ impl SensorState {
         height: f32,
         show_secondary: bool,
     ) -> Element<'b, Message, AppTheme> {
-        let power = self.latest_reading.as_ref().and_then(|d| d.total_consumption());
+        let power = self
+            .latest_reading
+            .as_ref()
+            .and_then(|d| d.total_energy())
+            .map(|energy| energy.as_watts_for_seconds(LIVE_SAMPLING_PERIOD_SECONDS as f64));
 
         match &self.sensor_category {
             SensorCategory::Component(state) => {
@@ -954,6 +963,22 @@ fn process_icon_cell(cached_handle: Option<image::Handle>) -> Element<'static, M
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
         .into()
+}
+
+fn chart_power_or_energy(energy: EnergyUj, time_range: &TimeRange) -> f64 {
+    if time_range.is_energy_mode() {
+        energy.as_watts_for_seconds(1.0) * time_range.power_scale_factor()
+    } else {
+        energy.as_watts_for_seconds(1.0)
+    }
+}
+
+fn process_power_or_energy(energy: EnergyUj, time_range: &TimeRange) -> f64 {
+    if time_range.is_energy_mode() {
+        energy.as_watt_hours()
+    } else {
+        energy.as_watts_for_seconds(time_range.seconds() as f64)
+    }
 }
 
 fn process_identity(process: &ProcessDataDB) -> String {
