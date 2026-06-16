@@ -117,7 +117,7 @@ pub fn estimate_igpu_energy(usage_percent: f64, duration: std::time::Duration) -
     EnergyUj::from_joules(energy_joules)
 }
 
-/// TDP-based CPU power estimator.
+/// TDP-based CPU energy consumption estimator.
 pub struct EstimationCPUSensor {
     tdp: f64,
     last_reading: RefCell<Instant>,
@@ -132,7 +132,7 @@ impl EstimationCPUSensor {
         }
     }
 
-    /// Returns energy in µJ consumed since the last call.
+    /// Estimates energy comsumption since last call from CPU usage percentage.
     pub fn estimate(&self, usage_percent: f64) -> EnergyUj {
         let now = Instant::now();
         let duration = now.duration_since(*self.last_reading.borrow());

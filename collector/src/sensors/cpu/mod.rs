@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use common::{
-    CPUData, EnergyUj, SensorData,
+    CPUData, SensorData,
     types::{CpuInfo, InitialInfo},
 };
 use sysinfo::System;
@@ -50,7 +50,7 @@ impl CPUSensor {
 }
 
 impl Sensor for CPUSensor {
-    fn read_full_data(&self) -> Result<SensorData<EnergyUj>, SensorError> {
+    fn read_full_data(&self) -> Result<SensorData, SensorError> {
         // Get CPU usage first (needed for estimation, always populated)
         let usage_percent = {
             let mut sys = self

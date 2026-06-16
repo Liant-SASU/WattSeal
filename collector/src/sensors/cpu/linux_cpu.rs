@@ -7,7 +7,7 @@ use super::{Sensor, SensorError};
 /// Linux CPU energy consumption sensor using Intel RAPL (Running Average Power Limit)
 /// via sysfs at `/sys/class/powercap/intel-rapl:0/`.
 pub struct LinuxCPUSensor {
-    rapl_path: String,
+    energy_path: String,
     max_energy_uj: u64,
     last_reading: RefCell<Option<u64>>,
 }
@@ -26,7 +26,7 @@ impl LinuxCPUSensor {
         std::fs::read_to_string(&energy_path)
             .map_err(|e| SensorError::ReadError(format!("RAPL not accessible: {}", e)))?;
         Ok(LinuxCPUSensor {
-            rapl_path,
+            energy_path,
             max_energy_uj,
             last_reading: RefCell::new(None),
         })
@@ -34,8 +34,7 @@ impl LinuxCPUSensor {
 
     /// Reads the cumulative energy counter in microjoules.
     fn read_energy_uj(&self) -> Result<u64, SensorError> {
-        let path = format!("{}/energy_uj", self.rapl_path);
-        std::fs::read_to_string(&path)
+        std::fs::read_to_string(&self.energy_path)
             .map_err(|e| SensorError::ReadError(format!("Failed to read RAPL: {}", e)))?
             .trim()
             .parse::<u64>()
@@ -46,7 +45,6 @@ impl LinuxCPUSensor {
 impl Sensor for LinuxCPUSensor {
     fn read_full_data(&self) -> Result<SensorData, SensorError> {
         let current_uj = self.read_energy_uj()?;
-
         let last = *self.last_reading.borrow();
 
         let delta_uj = match last {

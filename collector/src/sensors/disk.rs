@@ -33,7 +33,7 @@ impl DiskSensor {
 }
 
 impl Sensor for DiskSensor {
-    fn read_full_data(&self) -> Result<SensorData<EnergyUj>, SensorError> {
+    fn read_full_data(&self) -> Result<SensorData, SensorError> {
         let now = Instant::now();
         let duration = now.duration_since(*self.last_reading.borrow()).as_secs_f64().max(0.001);
 

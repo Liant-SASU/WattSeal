@@ -80,7 +80,7 @@ impl Sensor for SensorType {
 
 /// Common interface for hardware sensors.
 pub trait Sensor {
-    /// Reads energy consumption since last call, usage, usage, and throughput data.
+    /// Reads energy consumption since last call, usage, and throughput data.
     fn read_full_data(&self) -> Result<SensorData, SensorError>;
     /// Returns static hardware specs (model, capacity, etc.).
     fn read_initial_info(&self) -> Result<InitialInfo, SensorError> {
@@ -140,7 +140,7 @@ pub fn create_event_from_sensors(sensors: &Vec<SensorType>, since_last_update: D
         }
     }
 
-    // --- Integrated-GPU power resolution ---
+    // --- Integrated-GPU energy resolution ---
     // Priority 1: Real PP1 reading from MSR (Scaphandre driver).
     if let Some(igpu_energy) = integrated_gpu_energy {
         let merged = data.iter_mut().any(|d| {
@@ -161,7 +161,7 @@ pub fn create_event_from_sensors(sensors: &Vec<SensorType>, since_last_update: D
         }
     }
 
-    // Priority 2: Estimate iGPU power from usage when PP1 is unavailable.
+    // Priority 2: Estimate iGPU energy from usage when PP1 is unavailable.
     if !has_pp1_source {
         for &idx in &integrated_gpu_indices {
             if let SensorData::GPU(ref mut gpu) = data[idx] {

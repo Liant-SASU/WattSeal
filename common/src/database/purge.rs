@@ -8,6 +8,7 @@ use crate::{
     database::{Database, HOURLY_SAMPLING_PERIOD_SECONDS, LIVE_SAMPLING_PERIOD_SECONDS},
     types::{Byte, EnergyUj},
 };
+
 const HOUR_MS: i64 = HOURLY_SAMPLING_PERIOD_SECONDS * 1000;
 
 /// Aggregates old data into hourly buckets and purges raw records.

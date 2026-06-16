@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::{EnergyUj, SensorData, types::InitialInfo};
+use common::{SensorData, types::InitialInfo};
 
 use super::{Sensor, SensorError, SensorType};
 
@@ -115,7 +115,7 @@ pub enum GPUSensor {
 }
 
 impl Sensor for GPUSensor {
-    fn read_full_data(&self) -> Result<SensorData<EnergyUj>, SensorError> {
+    fn read_full_data(&self) -> Result<SensorData, SensorError> {
         match self {
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             GPUSensor::Nvidia(sensor) => sensor.read_full_data(),
@@ -257,7 +257,7 @@ mod amd_gpu {
     }
 
     impl Sensor for AmdGPUSensor {
-        fn read_full_data(&self) -> Result<SensorData<EnergyUj>, SensorError> {
+        fn read_full_data(&self) -> Result<SensorData, SensorError> {
             let now = Instant::now();
             let duration = now.duration_since(*self.last_reading.borrow()).as_secs_f64().max(0.001);
 
@@ -503,7 +503,7 @@ mod intel_gpu {
     }
 
     impl Sensor for IntelGPUSensor {
-        fn read_full_data(&self) -> Result<SensorData<EnergyUj>, SensorError> {
+        fn read_full_data(&self) -> Result<SensorData, SensorError> {
             unsafe {
                 PdhCollectQueryData(self.query);
                 if !self.initialized.get() {

@@ -41,9 +41,6 @@ pub fn setup() {
             false
         }
     };
-    if installed && ScaphandreMsrReader::new().is_ok() {
-        return;
-    }
 
     if installed && ScaphandreMsrReader::new().is_ok() {
         return;
@@ -89,7 +86,7 @@ impl Default for CPUValues {
     }
 }
 
-/// Windows CPU power sensor using MSR (Model-Specific Registers) via Scaphandre.
+/// Windows CPU energy sensor using MSR (Model-Specific Registers) via Scaphandre.
 pub struct WindowsCPUSensor {
     msr_reader: MSRReader,
     last_energy_measurement: RefCell<CPUValues>,
@@ -127,14 +124,14 @@ impl WindowsCPUSensor {
         *last_energy_mut = current_energy;
 
         if energy_values.total_energy.is_none() {
-            return Err(SensorError::ReadError("Failed to calculate power".to_string()));
+            return Err(SensorError::ReadError("Failed to calculate energy".to_string()));
         }
         Ok(energy_values)
     }
 }
 
 impl Sensor for WindowsCPUSensor {
-    fn read_full_data(&self) -> Result<SensorData<EnergyUj>, SensorError> {
+    fn read_full_data(&self) -> Result<SensorData, SensorError> {
         let cpu_energy_values = self.read_raw_energy_delta()?;
         Ok(cpu_energy_values.into())
     }
