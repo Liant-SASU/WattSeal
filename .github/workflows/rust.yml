@@ -26,7 +26,7 @@ jobs:
       - name: Run Format Check
         run: cargo +nightly fmt -- --check
 
-  build:
+  build-windows:
     name: Build (Windows)
     runs-on: windows-latest
     timeout-minutes: 45
@@ -41,12 +41,23 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Build all
-        run: cargo build --all
+      - name: Build release
+        run: cargo build --release
+
+      - name: Package
+        shell: pwsh
+        run: Copy-Item target/release/WattSeal.exe WattSeal-windows.exe
+
+      - name: Upload Windows Beta Artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: beta-windows
+          path: WattSeal-windows.exe
 
   check-linux:
-    name: Check (Linux)
-    runs-on: ubuntu-latest
+    name: Build (Linux)
+    runs-on: ubuntu-20.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
@@ -66,11 +77,23 @@ jobs:
             libgtk-3-dev pkg-config \
             libxkbcommon-dev libwayland-dev
 
-      - name: Check workspace
-        run: cargo check --workspace
+      - name: Build release
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          cp target/release/WattSeal WattSeal-linux
+          chmod +x WattSeal-linux
+
+      - name: Upload Linux Beta Artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: beta-linux
+          path: WattSeal-linux
 
   check-macos:
-    name: Check (macOS)
+    name: Build (macOS)
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -84,5 +107,17 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Check workspace
-        run: cargo check --workspace
+      - name: Build release
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          cp target/release/WattSeal WattSeal-macos
+          chmod +x WattSeal-macos
+
+      - name: Upload macOS Beta Artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: beta-macos
+          path: WattSeal-macos
