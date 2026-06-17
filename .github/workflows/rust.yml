@@ -92,7 +92,7 @@ jobs:
 
       - name: Package
         run: |
-          cp target/release/WattSeal WattSeal-linux
+          cp target/x86_64-unknown-linux-gnu/release/WattSeal WattSeal-linux
           chmod +x WattSeal-linux
 
       - name: Upload Linux Beta Artifact
