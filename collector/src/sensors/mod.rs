@@ -173,7 +173,10 @@ pub fn create_event_from_sensors(
             #[cfg(debug_assertions)]
             Err(e) => eprintln!("✗ Error reading sensor data: {:?}", e),
             #[cfg(not(debug_assertions))]
-            Err(_) => {}
+            Err(e) => common::logging::log_component_error(
+                sensor.table_name(),
+                &format!("Failed to read sensor data: {:?}", e),
+            ),
         }
     }
 
@@ -324,7 +327,10 @@ pub fn get_hardware_info(sensors: &Vec<SensorType>) -> GeneralData {
                 battery_info
             }
         }
-        Err(_) => battery_info,
+        Err(e) => {
+            crate::clog!("✗ Failed to read battery info: {:?}", e);
+            battery_info
+        }
     };
     detected_materials.push(format!("Battery(s): [{}]", battery_names.join(", ")));
     sensors_info.push(InitialInfo::Battery(battery_info));

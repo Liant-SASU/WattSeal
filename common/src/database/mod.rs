@@ -204,7 +204,10 @@ impl Database {
 
     fn from_connection(conn: Connection) -> Result<Self, DatabaseError> {
         let tables = match conn.prepare("SELECT tables FROM hardware_info ORDER BY id DESC LIMIT 1") {
-            Err(_) => None,
+            Err(e) => {
+                crate::clog!("✗ Failed to read hardware_info tables: {:?}", e);
+                None
+            }
             Ok(mut stmt) => match stmt.query_row([], |row| row.get::<_, String>(0)).optional() {
                 Ok(Some(materials)) => Some(
                     materials

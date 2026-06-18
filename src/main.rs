@@ -390,7 +390,10 @@ fn main() {
                 thread::sleep(Duration::from_millis(250));
                 let mut guard = match ui_child_watcher.lock() {
                     Ok(g) => g,
-                    Err(_) => continue,
+                    Err(e) => {
+                        common::clog!("✗ Failed to lock UI child mutex: {}", e);
+                        continue;
+                    }
                 };
                 if let Some(child) = guard.as_mut() {
                     match child.try_wait() {
@@ -426,7 +429,10 @@ fn main() {
                 thread::sleep(Duration::from_millis(250));
                 let mut guard = match ui_child.lock() {
                     Ok(g) => g,
-                    Err(_) => continue,
+                    Err(e) => {
+                        common::clog!("✗ Failed to lock UI child mutex: {}", e);
+                        continue;
+                    }
                 };
                 if let Some(child) = guard.as_mut() {
                     match child.try_wait() {

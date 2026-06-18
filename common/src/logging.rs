@@ -45,3 +45,30 @@ pub fn log_to_file(_msg: &str) {}
 
 #[cfg(debug_assertions)]
 pub fn start_log_session() {}
+
+#[cfg(not(debug_assertions))]
+use std::{collections::HashMap, sync::Mutex};
+#[cfg(not(debug_assertions))]
+static ERROR_COUNTS: Mutex<Option<HashMap<&'static str, u32>>> = Mutex::new(None);
+#[cfg(not(debug_assertions))]
+static MAX_ERROR_LOGS: u32 = 3;
+
+#[cfg(not(debug_assertions))]
+/// Log a runtime error for the given component, but only for the first `MAX_ERROR_LOGS` occurrences.
+pub fn log_component_error(component: &'static str, msg: &str) {
+    let mut guard = match ERROR_COUNTS.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let map = guard.get_or_insert_with(HashMap::new);
+    let count = map.entry(component).or_insert(0);
+    if *count < MAX_ERROR_LOGS {
+        *count += 1;
+        let remaining = MAX_ERROR_LOGS - *count;
+        if remaining == 0 {
+            crate::clog!("✗ [{component}] {msg} (further errors suppressed)");
+        } else {
+            crate::clog!("✗ [{component}] {msg} ({remaining} log(s) remaining)");
+        }
+    }
+}
