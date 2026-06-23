@@ -31,10 +31,6 @@ keywords = ["power", "energy", "monitoring", "carbon", "emissions", "sustainabil
 edition = "2024"
 description = "WattSeal is a tool to monitor and analyze the power consumption of your computer, providing insights into energy usage and carbon emissions."
 
-[target.'cfg(windows)'.build-dependencies]
-winres = "0.1"
-image = { version = "0.25", default-features = false, features = ["png", "ico"] }
-
 [dependencies]
 collector = { path = "collector" }
 common = { path = "common" }
