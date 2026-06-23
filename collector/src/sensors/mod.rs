@@ -12,13 +12,10 @@ use std::{
 use battery::Manager;
 pub use common::{
     AllTimeData, EnergyUj, Event, GPUData, GeneralData, SensorData,
-    types::{
-        BatteryInfo, CpuInfo, DiskInfo, HardwareInfo, InitialInfo, MemoryInfo, ScreenInfo, SensorKind, SystemInfo,
-    },
+    types::{BatteryInfo, CpuInfo, DiskInfo, HardwareInfo, InitialInfo, MemoryInfo, SensorKind, SystemInfo},
 };
 pub use cpu::CPUSensor;
 pub use disk::DiskSensor;
-use display_info::DisplayInfo;
 pub use gpu::{GPUSensor, get_gpu_list};
 pub use network::NetworkSensor;
 pub use ram::RamSensor;
@@ -217,24 +214,6 @@ pub fn get_hardware_info(sensors: &Vec<SensorType>) -> GeneralData {
         is_virtual_machine: false,
     };
     sensors_info.push(InitialInfo::System(system_info));
-
-    // Display info
-    let display_infos = DisplayInfo::all().unwrap_or_default();
-    let mut display_names = Vec::new();
-    let mut screen_infos = Vec::new();
-    for display_info in display_infos {
-        let resolution = format!("{}x{}", display_info.width, display_info.height);
-        let friendly_name = display_info.friendly_name.clone();
-        display_names.push(friendly_name.clone());
-        screen_infos.push(ScreenInfo {
-            model: friendly_name,
-            resolution: resolution,
-            refresh_rate_hz: display_info.frequency as u32,
-            is_primary: display_info.is_primary,
-        });
-    }
-    detected_materials.push(format!("Display(s): [{}]", display_names.join(", ")));
-    sensors_info.push(InitialInfo::Displays(screen_infos));
 
     // Battery info
     let battery_info = BatteryInfo {
