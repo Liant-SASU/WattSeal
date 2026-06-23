@@ -261,7 +261,6 @@ pub enum InitialInfo {
     Memory(MemoryInfo),
     Gpus(Vec<String>),
     Disks(Vec<DiskInfo>),
-    Displays(Vec<ScreenInfo>),
     Battery(BatteryInfo),
 }
 
@@ -273,7 +272,6 @@ pub struct HardwareInfo {
     pub memory: MemoryInfo,
     pub gpus: Vec<String>,
     pub disks: Vec<DiskInfo>,
-    pub displays: Vec<ScreenInfo>,
     pub battery: BatteryInfo,
 }
 
@@ -304,7 +302,6 @@ impl From<Vec<InitialInfo>> for HardwareInfo {
         let mut memory_info = None;
         let mut gpu_list = None;
         let mut disk_infos = None;
-        let mut display_infos = None;
         let mut battery_info = None;
 
         for info in infos {
@@ -314,7 +311,6 @@ impl From<Vec<InitialInfo>> for HardwareInfo {
                 InitialInfo::Memory(mem) => memory_info = Some(mem),
                 InitialInfo::Gpus(gpus) => gpu_list = Some(gpus),
                 InitialInfo::Disks(disks) => disk_infos = Some(disks),
-                InitialInfo::Displays(displays) => display_infos = Some(displays),
                 InitialInfo::Battery(battery) => battery_info = Some(battery),
             }
         }
@@ -325,7 +321,6 @@ impl From<Vec<InitialInfo>> for HardwareInfo {
             memory: memory_info.unwrap_or_default(),
             gpus: gpu_list.unwrap_or_default(),
             disks: disk_infos.unwrap_or_default(),
-            displays: display_infos.unwrap_or_default(),
             battery: battery_info.unwrap_or_default(),
         }
     }
@@ -366,15 +361,6 @@ pub struct DiskInfo {
     pub disk_type: String,
     pub total_bytes: u64,
     pub used_bytes: u64,
-}
-
-/// Display model, resolution, and refresh rate.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ScreenInfo {
-    pub model: String,
-    pub resolution: String,
-    pub refresh_rate_hz: u32,
-    pub is_primary: bool,
 }
 
 /// Battery presence, capacity, and cycle count.
