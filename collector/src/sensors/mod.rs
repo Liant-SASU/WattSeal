@@ -2,6 +2,7 @@ pub mod cpu;
 pub mod disk;
 pub mod gpu;
 pub mod network;
+pub mod processes;
 pub mod ram;
 
 use std::{
@@ -21,6 +22,8 @@ pub use network::NetworkSensor;
 pub use ram::RamSensor;
 use sysinfo::System;
 
+use crate::sensors::processes::ProcessesSensor;
+
 /// Variant wrapper for all supported sensor.
 pub enum SensorType {
     CPU(CPUSensor),
@@ -28,6 +31,7 @@ pub enum SensorType {
     RAM(RamSensor),
     Disk(DiskSensor),
     Network(NetworkSensor),
+    Processes(ProcessesSensor),
 }
 
 impl SensorType {
@@ -39,6 +43,7 @@ impl SensorType {
             SensorType::RAM(_) => SensorKind::Ram,
             SensorType::Disk(_) => SensorKind::Disk,
             SensorType::Network(_) => SensorKind::Network,
+            SensorType::Processes(_) => SensorKind::Processes,
         }
     }
 }
@@ -51,6 +56,7 @@ impl Sensor for SensorType {
             SensorType::RAM(sensor) => sensor.read_full_data(),
             SensorType::Disk(sensor) => sensor.read_full_data(),
             SensorType::Network(sensor) => sensor.read_full_data(),
+            SensorType::Processes(sensor) => sensor.read_full_data(),
         }
     }
 
@@ -61,6 +67,7 @@ impl Sensor for SensorType {
             SensorType::RAM(sensor) => sensor.read_initial_info(),
             SensorType::Disk(sensor) => sensor.read_initial_info(),
             SensorType::Network(_) => Err(SensorError::NotSupported),
+            SensorType::Processes(_) => Err(SensorError::NotSupported),
         }
     }
 
@@ -71,6 +78,7 @@ impl Sensor for SensorType {
             SensorType::Disk(sensor) => sensor.read_name(),
             SensorType::Network(sensor) => sensor.read_name(),
             SensorType::RAM(_) => Err(SensorError::NotSupported),
+            SensorType::Processes(_) => Err(SensorError::NotSupported),
         }
     }
 }

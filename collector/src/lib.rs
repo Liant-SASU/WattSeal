@@ -22,6 +22,8 @@ use sensors::{
 };
 use sysinfo::System;
 
+use crate::sensors::processes::ProcessesSensor;
+
 /// Possible units to choose as output
 #[derive(Debug, Default, Clone, Copy)]
 pub enum ConsumptionUnit {
@@ -148,6 +150,13 @@ impl CollectorApp {
         self.sensors.push(SensorType::RAM(RamSensor::new(self.system.clone())));
         self.sensors.push(SensorType::Disk(DiskSensor::new()));
         self.sensors.push(SensorType::Network(NetworkSensor::new()));
+
+        //  Processes sensors
+        let hostname = hostname::get().unwrap_or_default().to_string_lossy().to_string();
+        self.sensors.push(SensorType::Processes(ProcessesSensor::new(
+            self.system.clone(),
+            hostname,
+        )));
 
         // Hardware info
         crate::clog!("\n========== GATHERING HARDWARE INFORMATION ==========\n");
