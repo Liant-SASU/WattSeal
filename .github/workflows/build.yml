@@ -1,0 +1,114 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      check-only:
+        description: "Run cargo check instead of a full build"
+        type: boolean
+        default: false
+      version-suffix:
+        description: "Optional suffix to append to the Cargo version (e.g. -beta)"
+        type: string
+        default: ""
+      upload-artifacts:
+        description: "Whether to upload build artifacts"
+        type: boolean
+        default: true
+      ref:
+        description: "Git ref to check out"
+        type: string
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ inputs.check-only && 'Check' || 'Build' }} (${{ matrix.os-name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            os-name: Windows
+            binary-src: target/release/WattSeal.exe
+            binary-dst: WattSeal-windows.exe
+
+          - os: ubuntu-latest
+            os-name: Linux
+            zigbuild-target: x86_64-unknown-linux-gnu.2.17
+            binary-src: target/x86_64-unknown-linux-gnu/release/WattSeal
+            binary-dst: WattSeal-linux
+
+          - os: macos-latest
+            os-name: macOS
+            binary-src: target/release/WattSeal
+            binary-dst: WattSeal-macos
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ inputs.check-only && 15 || 60 }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-tags: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Append version suffix
+        if: inputs.version-suffix != ''
+        shell: python
+        run: |
+          import re
+          with open("Cargo.toml", "r", encoding="utf-8") as f:
+              content = f.read()
+          new_content = re.sub(
+              r'^version = "([^"]+)"',
+              r'version = "\1${{ inputs.version-suffix }}"',
+              content, count=1, flags=re.MULTILINE
+          )
+          with open("Cargo.toml", "w", encoding="utf-8") as f:
+              f.write(new_content)
+
+      - name: Install cargo-zigbuild
+        if: ${{ !inputs.check-only && matrix.zigbuild-target != '' }}
+        run: pip3 install cargo-zigbuild
+
+      - name: Install system dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev pkg-config \
+            libxkbcommon-dev libwayland-dev
+
+      - name: Check
+        if: inputs.check-only
+        run: cargo check
+
+      - name: Build
+        if: ${{ !inputs.check-only }}
+        run: >
+          ${{ matrix.zigbuild-target != '' &&
+            format('cargo zigbuild --release --target {0}', matrix.zigbuild-target) ||
+            'cargo build --release' }}
+
+      - name: Package
+        if: ${{ !inputs.check-only }}
+        shell: bash
+        run: |
+          cp "${{ matrix.binary-src }}" "${{ matrix.binary-dst }}"
+          chmod +x "${{ matrix.binary-dst }}" 2>/dev/null || true
+
+      - name: Upload artifact
+        if: ${{ !inputs.check-only && inputs.upload-artifacts }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.binary-dst }}
+          path: ${{ matrix.binary-dst }}

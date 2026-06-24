@@ -1,19 +1,18 @@
-name: Rust CI
+name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
-
-env:
-  CARGO_TERM_COLOR: always
+    branches: ["main"]
 
 jobs:
-  rustfmt:
-    name: Verify Code Formatting
+  fmt:
+    name: Formatting
     runs-on: windows-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -23,139 +22,22 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Run Format Check
-        run: cargo +nightly fmt -- --check
+      - run: cargo +nightly fmt -- --check
+
+  check:
+    name: Check
+    if: github.event_name == 'pull_request'
+    needs: fmt
+    uses: ./.github/workflows/build.yml
+    with:
+      check-only: true
 
   build:
-    name: Build (${{ matrix.os-name }})
+    name: Build
     if: github.event_name == 'push'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            os-name: Windows
-            artifact-name: WattSeal-windows-beta
-            binary-src: target/release/WattSeal.exe
-            binary-dst: WattSeal-windows.exe
-            build-cmd: cargo build --release
-
-          - os: ubuntu-latest
-            os-name: Linux
-            artifact-name: WattSeal-linux-beta
-            binary-src: target/x86_64-unknown-linux-gnu/release/WattSeal
-            binary-dst: WattSeal-linux
-            build-cmd: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.17
-
-          - os: macos-latest
-            os-name: macOS
-            artifact-name: WattSeal-macos-beta
-            binary-src: target/release/WattSeal
-            binary-dst: WattSeal-macos
-            build-cmd: cargo build --release
-
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-tags: false
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-
-      - name: Append -beta to Cargo.toml version
-        shell: python
-        run: |
-          import re
-          with open("Cargo.toml", "r", encoding="utf-8") as f:
-              content = f.read()
-          
-          # Replaces only the first 'version = "X.Y.Z"' string found in the workspace root
-          new_content = re.sub(r'^version = "([^"]+)"', r'version = "\1-beta"', content, count=1, flags=re.MULTILINE)
-          
-          with open("Cargo.toml", "w", encoding="utf-8") as f:
-              f.write(new_content)
-
-      - name: Install cargo-zigbuild (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: pip3 install cargo-zigbuild
-
-      - name: Install system dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-3-dev pkg-config \
-            libxkbcommon-dev libwayland-dev
-
-      - name: Build release
-        env:
-          CARGO_PROFILE_RELEASE_OPT_LEVEL: 2
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 256
-        run: ${{ matrix.build-cmd }}
-
-      - name: Package
-        shell: bash
-        run: |
-          cp "${{ matrix.binary-src }}" "${{ matrix.binary-dst }}"
-          chmod +x "${{ matrix.binary-dst }}" 2>/dev/null || true
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.artifact-name }}
-          path: ${{ matrix.binary-dst }}
-
-  build-pr:
-    name: Build PR (${{ matrix.os-name }})
-    if: github.event_name == 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            os-name: Windows
-            build-cmd: cargo build --release
-
-          - os: ubuntu-latest
-            os-name: Linux
-            build-cmd: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.17
-
-          - os: macos-latest
-            os-name: macOS
-            build-cmd: cargo build --release
-
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-tags: false
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-
-      - name: Install cargo-zigbuild (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: pip3 install cargo-zigbuild
-
-      - name: Install system dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-3-dev pkg-config \
-            libxkbcommon-dev libwayland-dev
-
-      - name: Build release
-        env:
-          CARGO_PROFILE_RELEASE_OPT_LEVEL: 2
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 256
-        run: ${{ matrix.build-cmd }}
+    needs: fmt
+    uses: ./.github/workflows/build.yml
+    
+    with:
+      version-suffix: "-beta"
+      upload-artifacts: true
