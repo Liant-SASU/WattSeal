@@ -12,12 +12,18 @@ pub struct ProcessesSensor {
 }
 
 impl ProcessesSensor {
-    /// Creates a sensor sharing the given `System` handle.
+    /// Creates a sensor sharing the given `System` handle and using the given machine name.
     pub fn new(system: Rc<RefCell<System>>, machine_name: String) -> Self {
         Self { system, machine_name }
     }
 }
 
+    pub fn pid_to_id(&self) -> HashMap<u32, ProcessID> {
+        self.pid_to_id.borrow().clone()
+    }
+}
+
+/// A process key used to identify a prcoess on a machine
 struct ProcessKey {
     machine_id: String,
     process_name: String,
@@ -33,6 +39,7 @@ impl ProcessKey {
         }
     }
 
+/// Hash the process key to obtain a unique id
     fn into_process_id(&self) -> ProcessID {
         let mut hasher = blake3::Hasher::new();
 
@@ -71,7 +78,7 @@ impl Sensor for ProcessesSensor {
 
         let processes = sys.processes();
 
-        let mut pid_to_id: std::collections::HashMap<u32, ProcessID> = std::collections::HashMap::new();
+        // Firstly computes processes key to be able to identify processes parent with ProcessID
         for (pid, proc) in processes {
             let name = proc.name().to_str().unwrap_or("__unknown").to_string();
             let key = ProcessKey::new(self.machine_name.to_string(), name.clone(), pid.as_u32());
@@ -81,9 +88,13 @@ impl Sensor for ProcessesSensor {
 
         let mut processes_data = Vec::new();
 
+        // Capture every processes data
         for (pid, proc) in processes {
             let name = proc.name().to_str().unwrap_or("__unknown").to_string();
-            let parent = proc.parent().and_then(|p| pid_to_id.get(&p.as_u32())).cloned();
+            let parent = proc.parent().and_then(|p| {
+                let map = self.pid_to_id.borrow();
+                map.get(&p.as_u32()).cloned()
+            });
             let key = ProcessKey::new(self.machine_name.to_string(), name.clone(), pid.as_u32());
 
             let process_id = key.into_process_id();
@@ -95,10 +106,9 @@ impl Sensor for ProcessesSensor {
             let ram_usage = Some(proc.memory() as f64 / total_memory as f64 * 100.0);
 
             let disk = proc.disk_usage();
-            let disk_info = Some(ProcDiskInfo {
-                read_bytes: disk.read_bytes,
-                written_bytes: disk.written_bytes,
-            });
+
+            let read_bytes = Some(disk.read_bytes);
+            let written_bytes = Some(disk.written_bytes);
 
             let process_data = ProcessData {
                 process_id,
@@ -108,7 +118,8 @@ impl Sensor for ProcessesSensor {
                 cpu_usage,
                 gpu_usage,
                 ram_usage,
-                disk_info,
+                read_bytes,
+                written_bytes,
             };
             processes_data.push(process_data);
         }

@@ -234,15 +234,11 @@ pub struct NetworkData<E = EnergyUj> {
     pub uploaded_bytes: Byte,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ProcDiskInfo {
-    pub read_bytes: u64,
-    pub written_bytes: u64,
-}
-
-#[derive(Debug, Clone, Serialize)]
+/// Process identifier
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Hash)]
 pub struct ProcessID(pub u64);
 
+/// Process identifier, heredity, usage and thoughput readings
 #[derive(Debug, Clone, Serialize)]
 pub struct ProcessData {
     pub process_id: ProcessID,
@@ -252,7 +248,8 @@ pub struct ProcessData {
     pub cpu_usage: Option<f64>,
     pub gpu_usage: Option<f64>,
     pub ram_usage: Option<f64>,
-    pub disk_info: Option<ProcDiskInfo>,
+    pub read_bytes: Option<u64>,
+    pub written_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -451,16 +448,6 @@ impl Display for SensorKind {
     }
 }
 
-impl Display for ProcDiskInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Disk infos: {} read bytes and {} written bytes",
-            self.read_bytes, self.written_bytes
-        )
-    }
-}
-
 impl<T: Display> Display for SensorData<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -605,8 +592,11 @@ impl<T: Display> Display for SensorData<T> {
                         writeln!(f, "       RAM Usage: {:.2}%", ram)?;
                     }
 
-                    if let Some(ref disk) = p.disk_info {
-                        writeln!(f, "       {}", disk)?;
+                    if let Some(ref read_bytes) = p.read_bytes {
+                        writeln!(f, "       Read Bytes: {} B", read_bytes)?;
+                    }
+                    if let Some(ref written_bytes) = p.written_bytes {
+                        writeln!(f, "       Written Bytes: {} B", written_bytes)?;
                     }
                 }
                 Ok(())
