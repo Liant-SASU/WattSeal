@@ -448,16 +448,6 @@ impl Display for SensorKind {
     }
 }
 
-impl Display for ProcDiskInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Disk infos: {} read bytes and {} written bytes",
-            self.read_bytes, self.written_bytes
-        )
-    }
-}
-
 impl<T: Display> Display for SensorData<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
