@@ -17,6 +17,7 @@ pub const MAX_OUTCOMING_PACKET_SIZE: usize = 1 * 1024 * 1024; // 1 Mo
 pub const CLIENT_CHANNEL_CAPACITY: usize = 10;
 pub const KEEP_ALIVE_SECS: Duration = Duration::from_secs(5);
 
+/// Data with a timestamp in seconds
 #[derive(Serialize, Deserialize)]
 pub struct TimestampedData<T> {
     pub timestamp: u64,
