@@ -6,7 +6,7 @@ async fn main() {
         common::clog!("⚠ Failed to set working directory to executable directory: {}", e);
     }
 
-    let mut app = match CollectorApp::new(None) {
+    let mut app = match CollectorApp::new(1, None) {
         Ok(app) => app,
         Err(e) => {
             common::clog!("✗ Failed to create CollectorApp: {}", e);

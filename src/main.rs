@@ -8,6 +8,7 @@ use collector::{CollectorApp, ConsumptionUnit, MQTTInfo};
 /// Configuration options for the application.
 #[derive(Debug, Clone)]
 struct Options {
+    capture_interval: u64,
     mqtt_id: Option<String>,
     mqtt_addr: Option<SocketAddr>,
     mqtt_unit: Option<ConsumptionUnit>,
@@ -19,6 +20,13 @@ struct Options {
 
 /// Returns options parser to run
 fn options() -> OptionParser<Options> {
+    let capture_interval = long("intervals")
+        .short('i')
+        .help("Interval in seconds between each data capture.")
+        .argument::<u64>("SECS")
+        .fallback(1)
+        .display_fallback();
+
     let mqtt_id = long("mqtt-id")
         .help("Identifier used as the root of MQTT topics (e.g. my-machine/cpu, my-machine/ram). Requires --mqtt-addr to be set. Defaults to \"wattseal_collector\".")
         .argument::<String>("ID")
@@ -69,6 +77,7 @@ fn options() -> OptionParser<Options> {
     #[cfg(not(target_os = "windows"))]
     {
         return construct!(Options {
+            capture_interval,
             mqtt_id,
             mqtt_addr,
             mqtt_unit,
@@ -79,8 +88,9 @@ fn options() -> OptionParser<Options> {
 }
 
 /// Initializes the collector
-fn start_collector(mqtt_infos: Option<MQTTInfo>) -> Result<CollectorApp, String> {
-    let mut app = CollectorApp::new(mqtt_infos).map_err(|e| format!("Failed to create CollectorApp: {e}"))?;
+fn start_collector(capture_interval: u64, mqtt_infos: Option<MQTTInfo>) -> Result<CollectorApp, String> {
+    let mut app =
+        CollectorApp::new(capture_interval, mqtt_infos).map_err(|e| format!("Failed to create CollectorApp: {e}"))?;
     app.initialize()
         .map_err(|e| format!("Failed to initialize CollectorApp: {e}"))?;
     Ok(app)
@@ -121,7 +131,7 @@ async fn main() {
         None
     };
 
-    match start_collector(mqtt_infos) {
+    match start_collector(options.capture_interval, mqtt_infos) {
         Ok(mut app) => app.run().await,
         Err(e) => common::clog!("✗ {e}"),
     }

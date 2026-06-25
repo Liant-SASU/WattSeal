@@ -44,6 +44,7 @@ pub struct CollectorApp {
     mqtt_info: Option<MQTTInfo>,
     sensors: Vec<SensorType>,
     system: Rc<RefCell<System>>,
+    capture_interval: u64,
     last_timestamp: Option<u64>,
     #[cfg(debug_assertions)]
     iteration: u64,
@@ -62,13 +63,14 @@ impl MQTTInfo {
 
 impl CollectorApp {
     /// Creates a new collector.
-    pub fn new(mqtt_info: Option<MQTTInfo>) -> Result<Self, String> {
+    pub fn new(capture_interval: u64, mqtt_info: Option<MQTTInfo>) -> Result<Self, String> {
         let s = System::new_all();
 
         Ok(CollectorApp {
             mqtt_info,
             sensors: Vec::new(),
             system: Rc::new(RefCell::new(s)),
+            capture_interval,
             last_timestamp: None,
             #[cfg(debug_assertions)]
             iteration: 0,
@@ -209,12 +211,19 @@ impl CollectorApp {
         #[cfg(debug_assertions)]
         println!("\n========== POWER CONSUMPTION MONITORING ==========\nPress Ctrl+C to stop.\n");
 
-        let mlsecs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_millis();
-        let mlsecs_remaining = 1000 - mlsecs as u64;
+        let now_result = SystemTime::now().duration_since(UNIX_EPOCH);
+        let Ok(now) = now_result else {
+            crate::clog!("✗ Failed to get system time and stop collecting run");
+            return;
+        };
 
-        sleep_until(Instant::now() + Duration::from_millis(mlsecs_remaining)).await;
+        // To synchronize machines timestamp on the modulo
+        let remaining_secs = self.capture_interval - (now.as_secs() % self.capture_interval);
+        let remaining = Duration::from_secs(remaining_secs) - Duration::from_millis(now.subsec_millis() as u64);
 
-        let mut interval = interval(Duration::from_secs(1));
+        sleep_until(Instant::now() + remaining).await;
+
+        let mut interval = interval(Duration::from_secs(self.capture_interval));
 
         loop {
             interval.tick().await;
