@@ -1,6 +1,7 @@
 use collector::CollectorApp;
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     if let Err(e) = common::set_current_dir_to_exe_dir() {
         common::clog!("⚠ Failed to set working directory to executable directory: {}", e);
     }
@@ -16,5 +17,5 @@ fn main() {
         common::clog!("✗ Failed to initialize CollectorApp: {}", e);
         return;
     }
-    app.run();
+    app.run().await;
 }

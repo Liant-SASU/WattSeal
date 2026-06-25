@@ -86,7 +86,8 @@ fn start_collector(mqtt_infos: Option<MQTTInfo>) -> Result<CollectorApp, String>
     Ok(app)
 }
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     if let Err(e) = common::set_current_dir_to_exe_dir() {
         common::clog!("⚠ Failed to set working directory to executable directory: {}", e);
     }
@@ -121,7 +122,7 @@ fn main() {
     };
 
     match start_collector(mqtt_infos) {
-        Ok(mut app) => app.run(),
+        Ok(mut app) => app.run().await,
         Err(e) => common::clog!("✗ {e}"),
     }
 }
