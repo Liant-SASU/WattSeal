@@ -210,7 +210,7 @@ impl CollectorApp {
         }
     }
 
-    /// Runs the collection loop, sampling sensors every second.
+    /// Runs the collection loop, sampling sensors every capture interval second.
     pub async fn run(&mut self) {
         #[cfg(debug_assertions)]
         println!("\n========== POWER CONSUMPTION MONITORING ==========\nPress Ctrl+C to stop.\n");
