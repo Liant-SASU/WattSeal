@@ -283,7 +283,7 @@ mod amd_gpu {
             let data = GPUData {
                 total_energy: Some(EnergyUj::from_joules(energy_j)),
                 usage_percent: Percent::from(usage as f32),
-                vram_usage_percent: Percent::from(memory as f32),
+                vram_usage_percent: memory.and_then(|mem| Percent::from(mem as f32)),
             };
 
             *self.last_reading.borrow_mut() = now;
@@ -543,7 +543,7 @@ mod intel_gpu {
                     .fold(0.0f64, f64::max);
                 Ok(GPUData {
                     total_energy: None,
-                    usage_percent: Percent::from(max.clamp(0.0, 100.0)),
+                    usage_percent: Percent::from(max.clamp(0.0, 100.0) as f32),
                     vram_usage_percent: None,
                 }
                 .into())
