@@ -4,6 +4,7 @@ pub mod gpu;
 pub mod network;
 pub mod processes;
 pub mod ram;
+pub mod tcp_connections;
 
 use std::{
     collections::HashMap,
@@ -23,6 +24,7 @@ pub use network::NetworkSensor;
 pub use processes::ProcessesSensor;
 pub use ram::RamSensor;
 use sysinfo::System;
+pub use tcp_connections::TCPConnectionsSensor;
 
 /// Variant wrapper for all supported sensor.
 pub enum SensorType {
@@ -32,6 +34,7 @@ pub enum SensorType {
     Disk(DiskSensor),
     Network(NetworkSensor),
     Processes(ProcessesSensor),
+    TCPConnections(TCPConnectionsSensor),
 }
 
 impl SensorType {
@@ -44,6 +47,7 @@ impl SensorType {
             SensorType::Disk(_) => SensorKind::Disk,
             SensorType::Network(_) => SensorKind::Network,
             SensorType::Processes(_) => SensorKind::Processes,
+            SensorType::TCPConnections(_) => SensorKind::TCPConnections,
         }
     }
 }
@@ -57,6 +61,7 @@ impl Sensor for SensorType {
             SensorType::Disk(sensor) => sensor.read_full_data(),
             SensorType::Network(sensor) => sensor.read_full_data(),
             SensorType::Processes(sensor) => sensor.read_full_data(),
+            SensorType::TCPConnections(sensor) => sensor.read_full_data(),
         }
     }
 
@@ -68,6 +73,7 @@ impl Sensor for SensorType {
             SensorType::Disk(sensor) => sensor.read_initial_info(),
             SensorType::Network(_) => Err(SensorError::NotSupported),
             SensorType::Processes(_) => Err(SensorError::NotSupported),
+            SensorType::TCPConnections(_) => Err(SensorError::NotSupported),
         }
     }
 
@@ -79,6 +85,7 @@ impl Sensor for SensorType {
             SensorType::Network(sensor) => sensor.read_name(),
             SensorType::RAM(_) => Err(SensorError::NotSupported),
             SensorType::Processes(_) => Err(SensorError::NotSupported),
+            SensorType::TCPConnections(_) => Err(SensorError::NotSupported),
         }
     }
 }

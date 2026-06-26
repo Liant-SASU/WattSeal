@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, time::SystemTime};
+use std::{collections::HashMap, fmt::Display, net::SocketAddr, time::SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -278,6 +278,19 @@ pub struct ProcessData {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProcessesData(pub Vec<ProcessData>);
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TCPConnectionData {
+    pub client_id: Option<ProcessID>,
+    pub server_id: Option<ProcessID>,
+    pub local_addr: SocketAddr,
+    pub remote_addr: SocketAddr,
+    pub bytes_sent: Byte,
+    pub bytes_recv: Byte,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TCPConnectionsData(pub Vec<TCPConnectionData>);
+
 /// Tagged union of all sensor reading types.
 #[derive(Debug, Clone, Serialize)]
 pub enum SensorData<E = EnergyUj> {
@@ -287,6 +300,7 @@ pub enum SensorData<E = EnergyUj> {
     Disk(DiskData<E>),
     Network(NetworkData<E>),
     Processes(ProcessesData),
+    TCPConnections(TCPConnectionsData),
 }
 
 /// Sensor component category type.
@@ -298,6 +312,7 @@ pub enum SensorKind {
     Disk,
     Network,
     Processes,
+    TCPConnections,
 }
 
 /// Hardware information variant collected at startup.
@@ -428,6 +443,7 @@ impl SensorKind {
             SensorKind::Disk => "Disk",
             SensorKind::Network => "Network",
             SensorKind::Processes => "Processes",
+            SensorKind::TCPConnections => "TCPConnections",
         }
     }
 }
@@ -442,6 +458,7 @@ impl<E: Clone> SensorData<E> {
             SensorData::Disk(_) => SensorKind::Disk,
             SensorData::Network(_) => SensorKind::Network,
             SensorData::Processes(_) => SensorKind::Processes,
+            SensorData::TCPConnections(_) => SensorKind::TCPConnections,
         }
     }
 
@@ -454,6 +471,7 @@ impl<E: Clone> SensorData<E> {
             SensorData::Disk(data) => data.total_energy.clone(),
             SensorData::Network(data) => data.total_energy.clone(),
             SensorData::Processes(_) => None,
+            SensorData::TCPConnections(_) => None,
         }
     }
 }
@@ -467,6 +485,7 @@ impl Display for SensorKind {
             SensorKind::Disk => write!(f, "Disk"),
             SensorKind::Network => write!(f, "Network"),
             SensorKind::Processes => write!(f, "Processes"),
+            SensorKind::TCPConnections => write!(f, "TCP Connections"),
         }
     }
 }
@@ -624,6 +643,22 @@ impl<T: Display> Display for SensorData<T> {
                 }
                 Ok(())
             }
+            SensorData::TCPConnections(data) => {
+                writeln!(f, "TCP Connections:")?;
+                for c in data.0.iter() {
+                    writeln!(f, " - Connection ({} <-> {}):", c.local_addr, c.remote_addr)?;
+
+                    if let Some(ref client) = c.client_id {
+                        writeln!(f, "       Client ID: {}", client.0)?;
+                    }
+                    if let Some(ref server) = c.server_id {
+                        writeln!(f, "       Server ID: {}", server.0)?;
+                    }
+                    writeln!(f, "       Received Bytes: {}", c.bytes_recv)?;
+                    writeln!(f, "       Sent Bytes: {}", c.bytes_sent)?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -716,6 +751,7 @@ impl SensorData {
             SensorData::Disk(diskdata) => SensorData::Disk(diskdata.to_wh()),
             SensorData::Network(networkdata) => SensorData::Network(networkdata.to_wh()),
             SensorData::Processes(processesdata) => SensorData::Processes(processesdata.clone()),
+            SensorData::TCPConnections(tcpconnections) => SensorData::TCPConnections(tcpconnections.clone()),
         }
     }
 }
