@@ -64,6 +64,7 @@ fn options() -> OptionParser<Options> {
             .switch();
 
         return construct!(Options {
+            capture_interval,
             mqtt_id,
             mqtt_addr,
             mqtt_unit,
