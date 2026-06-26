@@ -158,6 +158,29 @@ impl std::ops::AddAssign<u64> for Byte {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+pub struct Percent(f32);
+
+impl Percent {
+    pub fn as_f32(&self) -> f32 {
+        self.0
+    }
+
+    pub fn from(value: f32) -> Option<Self> {
+        if value < 0.0 || value > 100.0 {
+            None
+        } else {
+            Some(Percent(value))
+        }
+    }
+}
+
+impl std::fmt::Display for Percent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.3} %", self.0)
+    }
+}
+
 /// Timestamped collection of sensor readings.
 #[derive(Debug, Clone)]
 pub struct Event {
@@ -200,22 +223,22 @@ pub struct CPUData<E = EnergyUj> {
     pub pp0_energy: Option<E>,
     pub pp1_energy: Option<E>,
     pub dram_energy: Option<E>,
-    pub usage_percent: Option<f64>,
+    pub usage_percent: Option<Percent>,
 }
 
 /// GPU energy and usage readings.
 #[derive(Debug, Clone, Serialize)]
 pub struct GPUData<E = EnergyUj> {
     pub total_energy: Option<E>,
-    pub usage_percent: Option<f64>,
-    pub vram_usage_percent: Option<f64>,
+    pub usage_percent: Option<Percent>,
+    pub vram_usage_percent: Option<Percent>,
 }
 
 /// RAM energy and usage readings.
 #[derive(Debug, Clone, Serialize)]
 pub struct RamData<E = EnergyUj> {
     pub total_energy: Option<E>,
-    pub usage_percent: Option<f64>,
+    pub usage_percent: Option<Percent>,
 }
 
 /// Disk energy and I/O throughput readings.
@@ -245,9 +268,9 @@ pub struct ProcessData {
     pub name: String,
     pub parent: Option<ProcessID>,
     pub exe_path: Option<String>,
-    pub cpu_usage: Option<f64>,
-    pub gpu_usage: Option<f64>,
-    pub ram_usage: Option<f64>,
+    pub cpu_usage: Option<Percent>,
+    pub gpu_usage: Option<Percent>,
+    pub ram_usage: Option<Percent>,
     pub read_bytes: Option<Byte>,
     pub written_bytes: Option<Byte>,
 }
@@ -489,7 +512,7 @@ impl<T: Display> Display for SensorData<T> {
                     f,
                     "   Usage:          {}",
                     data.usage_percent
-                        .map(|u| format!("{:.2} %", u))
+                        .map(|u| format!("{}", u))
                         .unwrap_or_else(|| "N/A".to_string())
                 )?;
                 Ok(())
@@ -508,14 +531,14 @@ impl<T: Display> Display for SensorData<T> {
                     f,
                     "   Usage:      {}",
                     data.usage_percent
-                        .map(|u| format!("{:.2} %", u))
+                        .map(|u| format!("{}", u))
                         .unwrap_or_else(|| "N/A".to_string())
                 )?;
                 writeln!(
                     f,
                     "   VRAM Usage: {}",
                     data.vram_usage_percent
-                        .map(|u| format!("{:.2} %", u))
+                        .map(|u| format!("{}", u))
                         .unwrap_or_else(|| "N/A".to_string())
                 )?;
                 Ok(())
@@ -534,7 +557,7 @@ impl<T: Display> Display for SensorData<T> {
                     f,
                     "   Usage:  {}",
                     data.usage_percent
-                        .map(|u| format!("{:.2} %", u))
+                        .map(|u| format!("{}", u))
                         .unwrap_or_else(|| "N/A".to_string())
                 )?;
                 Ok(())
@@ -581,15 +604,15 @@ impl<T: Display> Display for SensorData<T> {
                     }
 
                     if let Some(cpu) = p.cpu_usage {
-                        writeln!(f, "       CPU Usage:      {:.2}%", cpu)?;
+                        writeln!(f, "       CPU Usage:      {}", cpu)?;
                     }
 
                     if let Some(gpu) = p.gpu_usage {
-                        writeln!(f, "       GPU Usage:      {:.2}%", gpu)?;
+                        writeln!(f, "       GPU Usage:      {}", gpu)?;
                     }
 
                     if let Some(ram) = p.ram_usage {
-                        writeln!(f, "       RAM Usage:      {:.2}%", ram)?;
+                        writeln!(f, "       RAM Usage:      {}", ram)?;
                     }
 
                     if let Some(ref read_bytes) = p.read_bytes {

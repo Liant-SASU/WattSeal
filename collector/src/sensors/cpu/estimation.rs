@@ -1,6 +1,6 @@
 use std::{cell::RefCell, time::Instant};
 
-use common::EnergyUj;
+use common::{EnergyUj, Percent};
 
 static TDP_TABLE: &[(&str, f64)] = &[
     // Intel Desktop (12th–14th gen)
@@ -100,8 +100,8 @@ fn estimate_power(tdp: f64, usage_percent: f64) -> f64 {
 ///
 /// Uses a non-linear curve similar to [`estimate_power`] with a fixed
 /// 15 W typical TDP and a 0.01 W idle floor.
-fn estimate_igpu_power(usage_percent: f64) -> f64 {
-    let frac = (usage_percent / 100.0).clamp(0.0, 1.0);
+fn estimate_igpu_power(usage_percent: Percent) -> f64 {
+    let frac = (usage_percent.as_f32() as f64 / 100.0).clamp(0.0, 1.0);
     IGPU_IDLE_POWER + (IGPU_DEFAULT_TDP - IGPU_IDLE_POWER) * frac.powf(1.5)
 }
 
@@ -112,7 +112,7 @@ pub fn estimate_energy(tdp: f64, usage_percent: f64, duration: std::time::Durati
 }
 
 /// Estimates integrate-GPU energy in µJ directly from usage and elapsed duration.
-pub fn estimate_igpu_energy(usage_percent: f64, duration: std::time::Duration) -> EnergyUj {
+pub fn estimate_igpu_energy(usage_percent: Percent, duration: std::time::Duration) -> EnergyUj {
     let energy_joules = estimate_igpu_power(usage_percent) * duration.as_secs_f64();
     EnergyUj::from_joules(energy_joules)
 }

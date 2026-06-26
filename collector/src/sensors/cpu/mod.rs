@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use common::{
-    CPUData, SensorData,
+    CPUData, Percent, SensorData,
     types::{CpuInfo, InitialInfo},
 };
 use sysinfo::System;
@@ -77,7 +77,7 @@ impl Sensor for CPUSensor {
 
         if let SensorData::CPU(cpu_data) = power_data {
             power_data = SensorData::CPU(CPUData {
-                usage_percent: Some(usage_percent),
+                usage_percent: Percent::from(usage_percent as f32),
                 ..cpu_data
             });
         }

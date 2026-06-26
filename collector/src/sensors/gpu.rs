@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::{SensorData, types::InitialInfo};
+use common::{Percent, SensorData, types::InitialInfo};
 
 use super::{Sensor, SensorError, SensorType};
 
@@ -171,7 +171,7 @@ pub fn get_gpu_energy_sensor(vendor_id: &str, index: u32) -> Result<SensorType, 
 
 impl GPUSensor {
     /// Returns per-process GPU utilization percentages.
-    pub fn get_process_gpu_usage(&self, current_timestamp: u64) -> Result<HashMap<u32, f64>, SensorError> {
+    pub fn get_process_gpu_usage(&self, current_timestamp: u64) -> Result<HashMap<u32, Percent>, SensorError> {
         match self {
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             GPUSensor::Nvidia(sensor) => sensor.get_processes_gpu_usage(current_timestamp),
@@ -197,7 +197,7 @@ mod amd_gpu {
     use std::{cell::RefCell, time::Instant};
 
     use adlx::{Gpu, helper::AdlxHelper, performance_monitoring_services::PerformanceMonitoringServices};
-    use common::{EnergyUj, GPUData, SensorData};
+    use common::{EnergyUj, GPUData, Percent, SensorData};
 
     use super::{Sensor, SensorError};
 
@@ -282,8 +282,8 @@ mod amd_gpu {
 
             let data = GPUData {
                 total_energy: Some(EnergyUj::from_joules(energy_j)),
-                usage_percent: Some(usage as f64),
-                vram_usage_percent: memory,
+                usage_percent: Percent::from(usage as f32),
+                vram_usage_percent: Percent::from(memory as f32),
             };
 
             *self.last_reading.borrow_mut() = now;
@@ -297,7 +297,7 @@ mod amd_gpu {
 mod nvidia_gpu {
     use std::{cell::RefCell, collections::HashMap, time::Instant};
 
-    use common::{EnergyUj, GPUData, SensorData};
+    use common::{EnergyUj, GPUData, Percent, SensorData};
     use nvml_wrapper::Nvml;
 
     use super::{Sensor, SensorError};
@@ -354,7 +354,7 @@ mod nvidia_gpu {
             })
         }
 
-        pub fn get_processes_gpu_usage(&self, current_timestamp: u64) -> Result<HashMap<u32, f64>, SensorError> {
+        pub fn get_processes_gpu_usage(&self, current_timestamp: u64) -> Result<HashMap<u32, Percent>, SensorError> {
             let mut last_timestamp = self
                 .last_timestamp
                 .try_borrow_mut()
@@ -373,7 +373,9 @@ mod nvidia_gpu {
             match processes {
                 Ok(procs) => {
                     for proc in procs {
-                        usage_map.insert(proc.pid, proc.sm_util as f64);
+                        if let Some(usage) = Percent::from(proc.sm_util as f32) {
+                            usage_map.insert(proc.pid, usage);
+                        }
                     }
                     Ok(usage_map)
                 }
@@ -437,8 +439,8 @@ mod nvidia_gpu {
 
             Ok(GPUData {
                 total_energy: Some(energy),
-                usage_percent: Some(utilization.gpu as f64),
-                vram_usage_percent: Some(utilization.memory as f64),
+                usage_percent: Percent::from(utilization.gpu as f32),
+                vram_usage_percent: Percent::from(utilization.memory as f32),
             }
             .into())
         }
@@ -449,7 +451,7 @@ mod nvidia_gpu {
 mod intel_gpu {
     use std::slice;
 
-    use common::{GPUData, SensorData};
+    use common::{GPUData, Percent, SensorData};
     use windows::{
         Win32::System::Performance::{
             PDH_FMT_COUNTERVALUE_ITEM_W, PDH_FMT_DOUBLE, PDH_HCOUNTER, PDH_HQUERY, PdhAddEnglishCounterW,
@@ -516,7 +518,7 @@ mod intel_gpu {
                 {
                     return Ok(GPUData {
                         total_energy: None,
-                        usage_percent: Some(0.0),
+                        usage_percent: Percent::from(0.0),
                         vram_usage_percent: None,
                     }
                     .into());
@@ -526,7 +528,7 @@ mod intel_gpu {
                 if PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, &mut size, &mut count, Some(items)) != 0 {
                     return Ok(GPUData {
                         total_energy: None,
-                        usage_percent: Some(0.0),
+                        usage_percent: Percent::from(0.0),
                         vram_usage_percent: None,
                     }
                     .into());
@@ -541,7 +543,7 @@ mod intel_gpu {
                     .fold(0.0f64, f64::max);
                 Ok(GPUData {
                     total_energy: None,
-                    usage_percent: Some(max.clamp(0.0, 100.0)),
+                    usage_percent: Percent::from(max.clamp(0.0, 100.0)),
                     vram_usage_percent: None,
                 }
                 .into())

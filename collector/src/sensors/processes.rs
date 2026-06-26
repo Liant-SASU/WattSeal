@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use common::{Byte, ProcessData, ProcessID, ProcessesData, SensorData};
+use common::{Byte, Percent, ProcessData, ProcessID, ProcessesData, SensorData};
 use sysinfo::System;
 
 use crate::sensors::{Sensor, SensorError};
@@ -106,9 +106,8 @@ impl Sensor for ProcessesSensor {
             let exe_path = proc
                 .exe()
                 .and_then(|path| path.to_str().and_then(|str| Some(str.to_string())));
-            let cpu_usage: Option<f64> = Some(proc.cpu_usage() as f64 / nb_cores as f64);
-            let gpu_usage = None;
-            let ram_usage = Some(proc.memory() as f64 / total_memory as f64 * 100.0);
+            let cpu_usage = (proc.cpu_usage() as f64 / nb_cores as f64) as f32;
+            let ram_usage = (proc.memory() as f64 / total_memory as f64 * 100.0) as f32;
 
             let disk = proc.disk_usage();
 
@@ -120,9 +119,9 @@ impl Sensor for ProcessesSensor {
                 name,
                 parent,
                 exe_path,
-                cpu_usage,
-                gpu_usage,
-                ram_usage,
+                cpu_usage: Percent::from(cpu_usage),
+                gpu_usage: None,
+                ram_usage: Percent::from(ram_usage),
                 read_bytes: read_bytes.map(|b| Byte::from(b)),
                 written_bytes: written_bytes.map(|b| Byte::from(b)),
             };

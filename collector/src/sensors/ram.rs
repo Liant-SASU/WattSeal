@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc, time::Instant};
 
 use common::{
-    EnergyUj, RamData, SensorData,
+    EnergyUj, Percent, RamData, SensorData,
     types::{InitialInfo, MemoryInfo},
 };
 
@@ -37,7 +37,7 @@ impl Sensor for RamSensor {
         let total_memory = system.total_memory() as f64 / 1024.0; // Convert to GB
         let used_memory = system.used_memory() as f64 / 1024.0; // Convert to GB
         let usage_percent = if total_memory > 0.0 {
-            (used_memory / total_memory) * 100.0
+            ((used_memory / total_memory) * 100.0) as f32
         } else {
             0.0
         };
@@ -48,7 +48,7 @@ impl Sensor for RamSensor {
 
         Ok(SensorData::Ram(RamData {
             total_energy: Some(EnergyUj::from_joules(energy_j)),
-            usage_percent: Some(usage_percent),
+            usage_percent: Percent::from(usage_percent),
         }))
     }
 
