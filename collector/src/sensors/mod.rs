@@ -12,11 +12,11 @@ use std::{
 };
 
 use battery::Manager;
-use common::ProcessID;
 pub use common::{
     AllTimeData, EnergyUj, Event, GPUData, GeneralData, SensorData,
     types::{BatteryInfo, CpuInfo, DiskInfo, HardwareInfo, InitialInfo, MemoryInfo, SensorKind, SystemInfo},
 };
+use common::{ProcessID, TCPConnectionID};
 pub use cpu::CPUSensor;
 pub use disk::DiskSensor;
 pub use gpu::{GPUSensor, get_gpu_list};
@@ -186,8 +186,9 @@ pub fn create_event_from_sensors(sensors: &Vec<SensorType>, since_last_update: D
             }
         }
     }
-
     update_process_gpu_usage(sensors, &mut data);
+    update_tcp_connection_process_id(sensors, &mut data);
+
     return Event::new(time, data);
 }
 
@@ -310,6 +311,36 @@ pub fn update_process_gpu_usage(sensors: &Vec<SensorType>, sensors_data: &mut Ve
                 for process_data in processes_data.0.iter_mut() {
                     if let Some(pid) = id_to_pid.get(&process_data.process_id) {
                         process_data.gpu_usage = proc_gpu_usage.get(pid).copied();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub fn update_tcp_connection_process_id(sensors: &Vec<SensorType>, sensors_data: &mut Vec<SensorData>) {
+    let mut pid_to_prid: HashMap<u32, ProcessID> = HashMap::new();
+    let mut tcid_to_pid: HashMap<TCPConnectionID, u32> = HashMap::new();
+    for sensor in sensors {
+        match sensor {
+            SensorType::Processes(processes_sensor) => {
+                pid_to_prid.extend(processes_sensor.pid_to_id());
+            }
+            SensorType::TCPConnections(connections_sensor) => {
+                if let Some(map) = connections_sensor.id_to_pid_map() {
+                    tcid_to_pid.extend(map);
+                }
+            }
+            _ => {}
+        }
+    }
+    for sensor_data in sensors_data.iter_mut() {
+        match sensor_data {
+            SensorData::TCPConnections(connections_data) => {
+                for connection in connections_data.0.iter_mut() {
+                    if let Some(pid) = tcid_to_pid.get(&connection.connection_id) {
+                        connection.local_process_id = pid_to_prid.get(&pid).cloned();
                     }
                 }
             }
