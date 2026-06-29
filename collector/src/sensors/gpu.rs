@@ -171,10 +171,10 @@ pub fn get_gpu_energy_sensor(vendor_id: &str, index: u32) -> Result<SensorType, 
 
 impl GPUSensor {
     /// Returns per-process GPU utilization percentages.
-    pub fn get_process_gpu_usage(&self, current_timestamp: u64) -> Result<HashMap<u32, Percent>, SensorError> {
+    pub fn get_process_gpu_usage(&self, _current_timestamp: u64) -> Result<HashMap<u32, Percent>, SensorError> {
         match self {
             #[cfg(any(target_os = "windows", target_os = "linux"))]
-            GPUSensor::Nvidia(sensor) => sensor.get_processes_gpu_usage(current_timestamp),
+            GPUSensor::Nvidia(sensor) => sensor.get_processes_gpu_usage(_current_timestamp),
             #[cfg(target_os = "windows")]
             GPUSensor::Amd(_) | GPUSensor::Intel { .. } => Err(SensorError::NotSupported),
             #[cfg(not(any(target_os = "windows", target_os = "linux")))]

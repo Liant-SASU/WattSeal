@@ -24,18 +24,16 @@ const DEFAULT_MIN_EPHEMERAL_PORT: u16 = 49152;
 const DEFAULT_MAX_EPHEMERAL_PORT: u16 = 65535;
 
 fn get_ephemeral_port_range() -> (u16, u16) {
-    let min = sysctl::Ctl::new("net.inet.ip.portrange.first")
-        .and_then(|ctl| ctl.value_as::<u32>())
-        .unwrap_or(DEFAULT_MIN_EPHEMERAL_PORT) as u16;
+    let min = (sysctl::Ctl::new("net.inet.ip.portrange.first").and_then(|ctl| ctl.value_as::<u32>()) as u16)
+        .unwrap_or(DEFAULT_MAX_EPHEMERAL_PORT);
 
-    let max = sysctl::Ctl::new("net.inet.ip.portrange.last")
-        .and_then(|ctl| ctl.value_as::<u32>())
-        .unwrap_or(DEFAULT_MAX_EPHEMERAL_PORT) as u16;
+    let max = (sysctl::Ctl::new("net.inet.ip.portrange.last").and_then(|ctl| ctl.value_as::<u32>()) as u16)
+        .unwrap_or(DEFAULT_MAX_EPHEMERAL_PORT);
 
     (min, max)
 }
 
-fn extract_addrs(tcp_info: &libproc::libproc::net_info::TcpSocketInfo) -> (SocketAddr, SocketAddr) {
+fn extract_addrs(tcp_info: &libproc::libproc::net_info::TcpSockInfo) -> (SocketAddr, SocketAddr) {
     unsafe {
         if tcp_info.tcpsi_ini.insi_vflag == 4 {
             let local_ip = IpAddr::V4(Ipv4Addr::from(
@@ -61,26 +59,6 @@ fn extract_addrs(tcp_info: &libproc::libproc::net_info::TcpSocketInfo) -> (Socke
             )
         }
     }
-}
-
-fn inode_to_pid_map() -> HashMap<u64, u32> {
-    let mut hmap = HashMap::new();
-
-    let Ok(ps) = procfs::process::all_processes() else {
-        return hmap;
-    };
-
-    for p in ps.flatten() {
-        let Ok(fds) = p.fd() else { continue };
-
-        for fd in fds.flatten() {
-            if let procfs::process::FDTarget::Socket(inode) = fd.target {
-                hmap.insert(inode, p.pid as u32);
-            }
-        }
-    }
-
-    hmap
 }
 
 impl MacosTCPConnectionsCollector {
@@ -116,51 +94,51 @@ impl MacosTCPConnectionsCollector {
                 if fd.proc_fdtype != ProcFDType::Socket as u32 {
                     continue;
                 }
+                let Ok(socket_info) = pidinfo::<SocketFDInfo>(pid as i32, fd.proc_fd as u64) else {
+                    continue;
+                };
+
+                if socket_info.psi.soi_kind != SocketInfoKind::Tcp as i32 {
+                    continue;
+                }
+                let tcp_info = unsafe { socket_info.psi.soi_proto.pri_tcp };
+
+                if tcp_info.tcpsi_state != TcpSIState::Connected as i32 {
+                    continue;
+                }
+                let (local_addr, remote_addr) = extract_addrs(&tcp_info);
+
+                let (ep_min, ep_max) = self.ephemeral_port_range;
+                let local_port = local_addr.port();
+
+                let is_maybe_client = if local_port > ep_min && local_port < ep_max {
+                    Some(true)
+                } else {
+                    Some(false)
+                };
+
+                let key = TCPConnectionKey::new(self.machine_name.to_string(), local_addr, remote_addr);
+                let id = key.into_tcp_connection_id();
+
+                self.id_to_pid.borrow_mut().insert(id.clone(), *pid);
+
+                let recv_bytes = Some(Byte::from(tcp_info.tcpsi_rxbytes as u64));
+                let sent_bytes = Some(Byte::from(tcp_info.tcpsi_txbytes as u64));
+
+                let data = TCPConnectionData {
+                    connection_id: id,
+                    local_addr,
+                    remote_addr,
+                    maybe_client: is_maybe_client,
+
+                    // Need process sensor information
+                    local_process_id: None,
+
+                    recv_bytes,
+                    sent_bytes,
+                };
+                connections.push(data);
             }
-            let Ok(socket_info) = pidinfo::<SocketFDInfo>(pid as i32, fd.proc_fd as u64) else {
-                continue;
-            };
-
-            if socket_info.psi.soi_kind != SocketInfoKind::Tcp as i32 {
-                continue;
-            }
-            let tcp_info = unsafe { socket_info.psi.soi_proto.pri_tcp };
-
-            if tcp_info.tcpsi_state != TcpSIState::Connected as i32 {
-                continue;
-            }
-            let (local_addr, remote_addr) = extract_addrs(&tcp_info);
-
-            let (ep_min, ep_max) = self.ephemeral_port_range;
-            let local_port = local_addr.port();
-
-            let is_maybe_client = if local_port > ep_min && local_port < ep_max {
-                Some(true)
-            } else {
-                Some(false)
-            };
-
-            let key = TCPConnectionKey::new(self.machine_name.to_string(), local_addr, remote_addr);
-            let id = key.into_tcp_connection_id();
-
-            self.id_to_pid.borrow_mut().insert(id.clone(), *pid);
-
-            let recv_bytes = Some(Byte::from(tcp_info.tcpsi_rxbytes as u64));
-            let sent_bytes = Some(Byte::from(tcp_info.tcpsi_txbytes as u64));
-
-            let data = TCPConnectionData {
-                connection_id: id,
-                local_addr,
-                remote_addr,
-                maybe_client: is_maybe_client,
-
-                // Need process sensor information
-                local_process_id: None,
-
-                recv_bytes,
-                sent_bytes,
-            };
-            connections.push(data);
         }
         Ok(TCPConnectionsData(connections))
     }
