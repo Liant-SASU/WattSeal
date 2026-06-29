@@ -16,6 +16,6 @@ macro_rules! clog {
 pub use types::{
     AllTimeData, Byte, CPUData, DiskData, EnergyUj, EnergyWh, Event, GPUData, GeneralData, HardwareInfo,
     MICROJOULES_PER_JOULE, NetworkData, Percent, PowerW, ProcessData, ProcessID, ProcessesData, RamData,
-    SECONDS_PER_HOUR, SensorData, SensorKind,
+    SECONDS_PER_HOUR, SensorData, SensorKind, TCPConnectionData, TCPConnectionID, TCPConnectionsData,
 };
 pub use utils::set_current_dir_to_exe_dir;

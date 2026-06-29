@@ -16,7 +16,8 @@ use mqtt::{
     topics::{hardware_info_topic, sensor_data_to_topic},
 };
 use sensors::{
-    DiskSensor, NetworkSensor, ProcessesSensor, RamSensor, SensorType, create_event_from_sensors, get_hardware_info,
+    DiskSensor, NetworkSensor, ProcessesSensor, RamSensor, SensorType, TCPConnectionsSensor, create_event_from_sensors,
+    get_hardware_info,
     gpu::{GPUVendor, get_gpu_list},
 };
 use sysinfo::System;
@@ -156,8 +157,12 @@ impl CollectorApp {
         let hostname = hostname::get().unwrap_or_default().to_string_lossy().to_string();
         self.sensors.push(SensorType::Processes(ProcessesSensor::new(
             self.system.clone(),
-            hostname,
+            hostname.to_string(),
         )));
+
+        // TCP Connections sensor
+        self.sensors
+            .push(SensorType::TCPConnections(TCPConnectionsSensor::new(hostname)));
 
         // Hardware info
         crate::clog!("\n========== GATHERING HARDWARE INFORMATION ==========\n");

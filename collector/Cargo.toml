@@ -14,11 +14,21 @@ windows = { version = "0.62.2", features = [
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
     "Win32_System_Diagnostics_ToolHelp",
-    "Win32_System_SystemInformation"
+    "Win32_System_SystemInformation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
 ] }
 
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]
 nvml-wrapper = "0.12.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libproc = "0.14"
+nix = { version = "0.27", features = ["socket", "net"] }
+sysctl = "0.5"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = "0.18.0"
 
 [dependencies]
 common = { path = "../common" }

@@ -9,6 +9,7 @@ use crate::sensors::{Sensor, SensorError};
 pub struct ProcessesSensor {
     system: Rc<RefCell<System>>,
     machine_name: String,
+    // TO CHANGE IN RC
     pid_to_id: RefCell<HashMap<u32, ProcessID>>,
 }
 
@@ -27,7 +28,7 @@ impl ProcessesSensor {
     }
 }
 
-/// A process key used to identify a prcoess on a machine
+/// A process key used to identify a process on a machine
 struct ProcessKey {
     machine_id: String,
     process_name: String,
