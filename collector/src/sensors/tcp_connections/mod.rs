@@ -53,6 +53,7 @@ impl TCPConnectionKey {
     }
 }
 
+/// Per OS TCP connections informations collectors
 pub enum TCPConnectionsCollector {
     EmptyCollector,
     #[cfg(target_os = "linux")]
@@ -95,7 +96,8 @@ impl TCPConnectionsSensor {
             collector: create_collector(_hostname),
         }
     }
-
+    /// Returns the map linking TCP connection IDs to the PIDs that were using
+    /// those connections during the last information collection.
     pub fn id_to_pid_map(&self) -> Option<HashMap<TCPConnectionID, u32>> {
         match self.collector {
             #[cfg(target_os = "linux")]

@@ -16,15 +16,18 @@ use windows::Win32::{
 
 use crate::sensors::{SensorError, tcp_connections::TCPConnectionKey};
 
+/// Windows TCP connections information collector
 pub struct WindowsTCPConnectionsCollector {
-    ephemeral_port_range: (u16, u16),
-    machine_name: String,
-    id_to_pid: RefCell<HashMap<TCPConnectionID, u32>>,
+    ephemeral_port_range: (u16, u16),                  // Port used briefly, often by client
+    machine_name: String,                              // Name of the machine which collects data
+    id_to_pid: RefCell<HashMap<TCPConnectionID, u32>>, // Map linking TCP connections id to pid of process which uses the connection
 }
 
+/// Defaults ephemeral ports range used in windows
 const DEFAULT_MIN_EPHEMERAL_PORT: u16 = 49152;
 const DEFAULT_MAX_EPHEMERAL_PORT: u16 = 65535;
 
+/// Returns read and written bytes on given IPV4 connection row
 fn get_tcp_estats(row: &MIB_TCPROW_OWNER_PID) -> (Option<Byte>, Option<Byte>) {
     let mut rod = TCP_ESTATS_BANDWIDTH_ROD_v0::default();
     let rod_size = std::mem::size_of::<TCP_ESTATS_BANDWIDTH_ROD_v0>() as u32;
@@ -55,6 +58,7 @@ fn get_tcp_estats(row: &MIB_TCPROW_OWNER_PID) -> (Option<Byte>, Option<Byte>) {
     bytes
 }
 
+/// Returns read and written bytes on given IPV6 connection row
 fn get_tcp6_estats(row: &MIB_TCP6ROW_OWNER_PID) -> (Option<Byte>, Option<Byte>) {
     let mut rod = TCP_ESTATS_BANDWIDTH_ROD_v0::default();
     let rod_size = std::mem::size_of::<TCP_ESTATS_BANDWIDTH_ROD_v0>() as u32;
@@ -96,6 +100,7 @@ impl WindowsTCPConnectionsCollector {
         self.id_to_pid.borrow().clone()
     }
 
+    /// Collect TCP connections data for the given address family
     fn collect_for_family(&self, family: ADDRESS_FAMILY) -> Vec<TCPConnectionData> {
         let mut connections = Vec::new();
 
@@ -136,6 +141,7 @@ impl WindowsTCPConnectionsCollector {
         connections
     }
 
+    /// Parse tables to get IPV4 connections information
     fn parse_ipv4_table(&self, buf: &[u8], connections: &mut Vec<TCPConnectionData>) {
         let table = unsafe { &*(buf.as_ptr() as *const MIB_TCPTABLE_OWNER_PID) };
         let rows = unsafe { std::slice::from_raw_parts(table.table.as_ptr(), table.dwNumEntries as usize) };
@@ -181,6 +187,8 @@ impl WindowsTCPConnectionsCollector {
             connections.push(data);
         }
     }
+
+    /// Parse tables to get IPV6 connections information
     fn parse_ipv6_table(&self, buf: &[u8], connections: &mut Vec<TCPConnectionData>) {
         let table = unsafe { &*(buf.as_ptr() as *const MIB_TCP6TABLE_OWNER_PID) };
         let rows = unsafe { std::slice::from_raw_parts(table.table.as_ptr(), table.dwNumEntries as usize) };
@@ -226,6 +234,7 @@ impl WindowsTCPConnectionsCollector {
         }
     }
 
+    /// Collect IPV4 and IPV6 TCP connections information using windows API
     pub fn collect_tcp_connections(&self) -> Result<TCPConnectionsData, SensorError> {
         self.id_to_pid.borrow_mut().clear();
 

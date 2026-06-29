@@ -5,15 +5,18 @@ use procfs::net::{TcpState, tcp, tcp6};
 
 use crate::sensors::{SensorError, tcp_connections::TCPConnectionKey};
 
+/// Linux TCP connections information collector
 pub struct LinuxTCPConnectionsCollector {
-    ephemeral_port_range: (u16, u16),
-    machine_name: String,
-    id_to_pid: RefCell<HashMap<TCPConnectionID, u32>>,
+    ephemeral_port_range: (u16, u16),                  // Port used briefly, often by client
+    machine_name: String,                              // Name of the machine which collects data
+    id_to_pid: RefCell<HashMap<TCPConnectionID, u32>>, // Map linking TCP connections id to pid of process which uses the connection
 }
 
+/// Defaults ephemeral ports range used in linux
 const DEFAULT_MIN_EPHEMERAL_PORT: u16 = 32768;
 const DEFAULT_MAX_EPHEMERAL_PORT: u16 = 60999;
 
+/// Returns the ephemeral port range on macos using sysctl
 fn get_ephemeral_port_range() -> (u16, u16) {
     let range = std::fs::read_to_string("/proc/sys/net/ipv4/ip_local_port_range")
         .unwrap_or_else(|_| DEFAULT_MIN_EPHEMERAL_PORT.to_string() + " " + &DEFAULT_MAX_EPHEMERAL_PORT.to_string()); // default linux value
@@ -31,6 +34,7 @@ fn get_ephemeral_port_range() -> (u16, u16) {
     (min, max)
 }
 
+/// Returns a map linking socket inodes with its pid
 fn inode_to_pid_map() -> HashMap<u64, u32> {
     let mut hmap = HashMap::new();
 
@@ -64,6 +68,7 @@ impl LinuxTCPConnectionsCollector {
         self.id_to_pid.borrow().clone()
     }
 
+    /// Collect IPV4 and IPV6 TCP connections information using procfs
     pub fn collect_tcp_connections(&self) -> Result<TCPConnectionsData, SensorError> {
         let inode_to_pid_map = inode_to_pid_map();
         self.id_to_pid.borrow_mut().clear();

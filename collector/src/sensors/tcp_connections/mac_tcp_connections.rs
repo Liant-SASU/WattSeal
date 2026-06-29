@@ -15,15 +15,18 @@ use sysctl::Sysctl;
 
 use crate::sensors::{SensorError, tcp_connections::TCPConnectionKey};
 
+/// MacOS TCP connections information collector
 pub struct MacosTCPConnectionsCollector {
-    ephemeral_port_range: (u16, u16),
-    machine_name: String,
-    id_to_pid: RefCell<HashMap<TCPConnectionID, u32>>,
+    ephemeral_port_range: (u16, u16),                  // Port used briefly, often by client
+    machine_name: String,                              // Name of the machine which collects data
+    id_to_pid: RefCell<HashMap<TCPConnectionID, u32>>, // Map linking TCP connections id to pid of process which uses the connection
 }
 
+/// Defaults ephemeral ports range used in macos
 const DEFAULT_MIN_EPHEMERAL_PORT: u16 = 49152;
 const DEFAULT_MAX_EPHEMERAL_PORT: u16 = 65535;
 
+/// Returns the ephemeral port range on macos using sysctl
 fn get_ephemeral_port_range() -> (u16, u16) {
     let min = sysctl::Ctl::new("net.inet.ip.portrange.first")
         .and_then(|ctl| ctl.value_as::<u32>())
@@ -38,6 +41,7 @@ fn get_ephemeral_port_range() -> (u16, u16) {
     (min, max)
 }
 
+/// Extract local and remote address from TCP socket information of libproc
 fn extract_addrs(tcp_info: &TcpSockInfo) -> (SocketAddr, SocketAddr) {
     unsafe {
         if tcp_info.tcpsi_ini.insi_vflag == 4 {
@@ -79,6 +83,7 @@ impl MacosTCPConnectionsCollector {
         self.id_to_pid.borrow().clone()
     }
 
+    /// Collect IPV4 and IPV6 TCP connections information
     pub fn collect_tcp_connections(&self) -> Result<TCPConnectionsData, SensorError> {
         self.id_to_pid.borrow_mut().clear();
 
