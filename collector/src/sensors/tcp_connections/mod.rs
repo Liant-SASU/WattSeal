@@ -15,9 +15,9 @@ use common::{SensorData, TCPConnectionID};
 use crate::sensors::tcp_connections::linux_tcp_connections::LinuxTCPConnectionsCollector;
 #[cfg(target_os = "macos")]
 use crate::sensors::tcp_connections::mac_tcp_connections::MacosTCPConnectionsCollector;
-use crate::sensors::{Sensor, SensorError};
 #[cfg(target_os = "windows")]
-use crate::sensors::{Sensor, SensorError, tcp_connections::windows_tcp_connections::WindowsTCPConnectionsCollector};
+use crate::sensors::tcp_connections::windows_tcp_connections::WindowsTCPConnectionsCollector;
+use crate::sensors::{Sensor, SensorError};
 
 /// A TCP connection key used to identify a TCP Connection on a machine
 struct TCPConnectionKey {
