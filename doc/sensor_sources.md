@@ -86,8 +86,21 @@ The sources of the metrics collected and estimated by WattSeal for every sensor 
   ## Process Attribution
 
    * Library: sysinfo (for per-process CPU/RAM/Disk usage).
-   * Logic:
-       * CPU Share: $\frac{\text{Process CPU Usage}}{\text{Total CPU Usage}} \times \text{Total CPU Power}$.
-       * GPU Share: $\frac{\text{Process GPU Usage}}{\text{Total GPU Usage}} \times \text{Total GPU Power}$.
-       * Final Attribution: The process power is the sum of its attributed compute power (CPU + GPU), weighted
-          against the total system power. Custom calculation to encourage responsible usage: if only one process is using the CPU and GPU, it is attributed 100% of the power consumption.
+
+  ---
+
+  ## TCP Connections Attribution
+
+  ### Linux
+   * Library: procfs::net
+   * Source: [Connections info](https://docs.rs/procfs/latest/procfs/net/index.html)
+  
+  ### MacOS
+  * Libaries: sysctl and libproc
+  * Sources: 
+    * [Port range](https://docs.freebsd.org/fr/books/handbook/config/)
+    * [Connections info](https://docs.rs/libproc/latest/libproc/file_info/index.html)
+
+  ### Windows
+  * Libraries: Windows API
+  * Source : [Connections info](https://learn.microsoft.com/en-us/windows/win32/api/_iphlp/)
