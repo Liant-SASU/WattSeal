@@ -55,6 +55,34 @@ fn get_tcp_estats(row: &MIB_TCPROW_OWNER_PID) -> (Option<Byte>, Option<Byte>) {
     bytes
 }
 
+fn get_tcp6_estats(row: &MIB_TCP6ROW_OWNER_PID) -> (Option<Byte>, Option<Byte>) {
+    let mut rod = TCP_ESTATS_BANDWIDTH_ROD_v0::default();
+    let rod_size = std::mem::size_of::<TCP_ESTATS_BANDWIDTH_ROD_v0>() as u32;
+    let rod_bytes = unsafe { std::slice::from_raw_parts_mut(&mut rod as *mut _ as *mut u8, rod_size as usize) };
+
+    let result = unsafe {
+        GetPerTcp6ConnectionEStats(
+            row as *const _ as *mut _,
+            TcpConnectionEstatsBandwidth,
+            None,
+            0,
+            None,
+            0,
+            Some(rod_bytes),
+            rod_size,
+        )
+    };
+
+    if result != 0 {
+        (None, None)
+    } else {
+        (
+            Some(Byte::from(rod.OutboundBandwidth)),
+            Some(Byte::from(rod.InboundBandwidth)),
+        )
+    }
+}
+
 impl WindowsTCPConnectionsCollector {
     pub fn new(machine_name: String) -> Self {
         Self {
@@ -180,7 +208,7 @@ impl WindowsTCPConnectionsCollector {
                 Some(false)
             };
 
-            let (recv_bytes, sent_bytes) = get_tcp_estats(row);
+            let (recv_bytes, sent_bytes) = get_tcp6_estats(row);
 
             let data = TCPConnectionData {
                 connection_id: id,
