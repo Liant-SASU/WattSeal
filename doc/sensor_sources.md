@@ -2,9 +2,9 @@
 
 The sources of the metrics collected and estimated by WattSeal for every sensor and OS:
 
-1. CPU Metrics
+## CPU Metrics
 
-  Windows
+  ### Windows
    * Library: scaphandre-driver-rs (custom Rust wrapper for the Scaphandre driver).
    * Driver: Scaphandre RAPL Driver (requires admin rights once for installation).
    * Source: Model-Specific Registers (MSR).
@@ -24,11 +24,13 @@ The sources of the metrics collected and estimated by WattSeal for every sensor 
          * Intel: MSR_PKG_ENERGY_STATUS, MSR_PP0_ENERGY_STATUS, MSR_PP1_ENERGY_STATUS, MSR_DRAM_ENERGY_STATUS.
          * AMD: ENERGY_PKG_MSR, ENERGY_CORE_MSR.
 
-  Linux
+  ### Linux
    * Library: Standard file system access (needs sudo).
    * Source: [Linux Kernel powercap framework documentation](https://www.kernel.org/doc/html/next/power/powercap/powercap.html).
        * Path: /sys/class/powercap/intel-rapl:0/energy_uj.
    * Calculation: Directly reads microjoules ($\mu J$) from the sysfs interface and calculates the power over the measurement interval.
+
+  ### Fallback
 
   Fallback (OS without RAPL support or insufficient permissions, currently always on macOS)
    * Library: sysinfo (for CPU usage).
@@ -37,31 +39,31 @@ The sources of the metrics collected and estimated by WattSeal for every sensor 
 
   ---
 
-  2. GPU Metrics (snapshot for now on AMD and NVIDIA, energy counter available on NVIDIA)
+  ## GPU Metrics (snapshot for now on AMD and NVIDIA, energy counter available on NVIDIA)
 
-  NVIDIA (Windows & Linux)
+  ### NVIDIA (Windows & Linux)
    * Library: nvml-wrapper.
    * Source: NVIDIA Management Library (NVML).
    * Metrics: Direct power usage in milliwatts (mW) (should switch to energy), GPU utilization, and Memory (VRAM) utilization.
 
-  AMD (Windows only)
+  ### AMD (Windows only)
    * Library: adlx.
    * Source: AMD Display Library X (ADLX).
    * Metrics: Accesses the "Performance Monitoring Services" to retrieve real-time power (mW) and usage statistics.
 
-  Intel (Windows only)
+  ### Intel (Windows only)
    * Library: Win32 Performance Data Helper (PDH).
    * Source: Windows Performance Counter: \\GPU Engine(*)\\Utilization Percentage. Power consumption comes from PP1.
 
   ---
 
-  3. RAM Metrics
+  ## RAM Metrics
    * Library: sysinfo.
    * Power Estimation: Fixed at a constant 5W for the entire memory bank, should be per-stick constant or DRAM ([Scaphandre doc](https://hubblo-org.github.io/scaphandre-documentation/explanations/rapl-domains.html)).
 
   ---
 
-  4. Disk Metrics
+  ## Disk Metrics
    * Library: sysinfo, real read/written bytes during the sampling period.
    * Source: Disk I/O throughput counters.
    * Power Estimation:
@@ -72,7 +74,7 @@ The sources of the metrics collected and estimated by WattSeal for every sensor 
 
   ---
 
-  5. Network Metrics
+  ## Network Metrics
    * Library: sysinfo, real sent/received bytes during the sampling period.
    * Source: Network interface throughput counters.
    * Power Estimation:
@@ -81,7 +83,7 @@ The sources of the metrics collected and estimated by WattSeal for every sensor 
 
   ---
 
-  6. Process Attribution
+  ## Process Attribution
 
    * Library: sysinfo (for per-process CPU/RAM/Disk usage).
    * Logic:
