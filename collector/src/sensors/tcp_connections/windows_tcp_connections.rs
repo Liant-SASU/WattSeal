@@ -7,8 +7,8 @@ use std::{
 use common::{Byte, TCPConnectionData, TCPConnectionID, TCPConnectionsData};
 use windows::Win32::{
     NetworkManagement::IpHelper::{
-        GetExtendedTcpTable, GetPerTcpConnectionEStats, MIB_TCP_TABLE_OWNER_PID, MIB_TCP6_TABLE_OWNER_PID,
-        MIB_TCPROW_OWNER_PID, TCP_ESTATS_BANDWIDTH_ROD_v0, TCP_TABLE_OWNER_PID_CONNECTIONS,
+        GetExtendedTcpTable, GetPerTcpConnectionEStats, MIB_TCP6TABLE_OWNER_PID, MIB_TCPROW_OWNER_PID,
+        MIB_TCPTABLE_OWNER_PID, TCP_ESTATS_BANDWIDTH_ROD_v0, TCP_TABLE_OWNER_PID_CONNECTIONS,
         TcpConnectionEstatsBandwidth,
     },
     Networking::WinSock::{ADDRESS_FAMILY, AF_INET, AF_INET6},
@@ -29,27 +29,30 @@ fn get_tcp_estats(row: &MIB_TCPROW_OWNER_PID) -> (Option<Byte>, Option<Byte>) {
     let mut rod = TCP_ESTATS_BANDWIDTH_ROD_v0::default();
     let mut rod_size = std::mem::size_of::<TCP_ESTATS_BANDWIDTH_ROD_v0>() as u32;
 
+    let rod_bytes = unsafe { std::slice::from_raw_parts_mut(&mut rod as *mut _ as *mut u8, rod_size as usize) };
+
     let result = unsafe {
         GetPerTcpConnectionEStats(
             row as *const _ as *mut _,
             TcpConnectionEstatsBandwidth,
             None,
-            0, // rw
+            0,
             None,
-            0, // ros
+            0,
             Some(&mut rod as *mut _ as *mut u8),
             rod_size,
         )
     };
 
-    if result != 0 {
-        return (None, None);
-    }
-
-    (
-        Some(Byte::from(rod.OutboundBandwidth)),
-        Some(Byte::from(rod.InboundBandwidth)),
-    )
+    let bytes = if result != 0 {
+        (None, None);
+    } else {
+        (
+            Some(Byte::from(rod.OutboundBandwidth)),
+            Some(Byte::from(rod.InboundBandwidth)),
+        )
+    };
+    bytes
 }
 
 impl WindowsTCPConnectionsCollector {
@@ -132,6 +135,8 @@ impl WindowsTCPConnectionsCollector {
             } else {
                 Some(false)
             };
+
+            let (read_bytes, send_bytes) = get_tcp_estats(row);
 
             let data = TCPConnectionData {
                 connection_id: id,
