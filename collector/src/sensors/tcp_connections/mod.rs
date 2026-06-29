@@ -4,6 +4,8 @@ mod linux_tcp_connections;
 #[cfg(target_os = "macos")]
 mod mac_tcp_connections;
 
+mod windows_tcp_connections;
+
 use std::{collections::HashMap, net::SocketAddr};
 
 use common::{SensorData, TCPConnectionID};
@@ -13,6 +15,8 @@ use crate::sensors::tcp_connections::linux_tcp_connections::LinuxTCPConnectionsC
 #[cfg(target_os = "macos")]
 use crate::sensors::tcp_connections::mac_tcp_connections::MacosTCPConnectionsCollector;
 use crate::sensors::{Sensor, SensorError};
+#[cfg(target_os = "windows")]
+use crate::sensors::{Sensor, SensorError, tcp_connections::windows_tcp_connections::WindowsTCPConnectionsCollector};
 
 /// A TCP connection key used to identify a TCP Connection on a machine
 struct TCPConnectionKey {
@@ -54,6 +58,8 @@ pub enum TCPConnectionsCollector {
     LinuxCollector(LinuxTCPConnectionsCollector),
     #[cfg(target_os = "macos")]
     MacOSCollector(MacosTCPConnectionsCollector),
+    #[cfg(target_os = "windows")]
+    WindowsCollector(WindowsTCPConnectionsCollector),
 }
 
 /// TCP Connections sensors thay collects informations about connection on
@@ -71,7 +77,12 @@ fn create_collector(_hostname: String) -> TCPConnectionsCollector {
     TCPConnectionsCollector::MacOSCollector(MacosTCPConnectionsCollector::new(_hostname))
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(target_os = "windows")]
+fn create_collector(_hostname: String) -> TCPConnectionsCollector {
+    TCPConnectionsCollector::WindowsCollector(WindowsTCPConnectionsCollector::new(_hostname))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 fn create_collector(_: String) -> TCPConnectionsCollector {
     TCPConnectionsCollector::EmptyCollector
 }
@@ -90,6 +101,8 @@ impl TCPConnectionsSensor {
             TCPConnectionsCollector::LinuxCollector(ref collector) => Some(collector.id_to_pid_map()),
             #[cfg(target_os = "macos")]
             TCPConnectionsCollector::MacOSCollector(ref collector) => Some(collector.id_to_pid_map()),
+            #[cfg(target_os = "windows")]
+            TCPConnectionsCollector::WindowsCollector(ref collector) => Some(collector.id_to_pid_map()),
             _ => None,
         }
     }
@@ -105,6 +118,10 @@ impl Sensor for TCPConnectionsSensor {
                 .map(|connections| SensorData::TCPConnections(connections)),
             #[cfg(target_os = "macos")]
             TCPConnectionsCollector::MacOSCollector(ref c) => c
+                .collect_tcp_connections()
+                .map(|connections| SensorData::TCPConnections(connections)),
+            #[cfg(target_os = "windows")]
+            TCPConnectionsCollector::WindowsCollector(ref c) => c
                 .collect_tcp_connections()
                 .map(|connections| SensorData::TCPConnections(connections)),
         }

@@ -4,7 +4,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use common::{Byte, TCPConnectionData, TCPConnectionID, TCPConnectionsData};
+use common::{TCPConnectionData, TCPConnectionID, TCPConnectionsData};
 use libproc::{
     file_info::{ListFDs, ProcFDType},
     net_info::{SocketFDInfo, SocketInfoKind, TcpSIState, TcpSockInfo},
