@@ -8,7 +8,7 @@ use common::{Byte, TCPConnectionData, TCPConnectionID, TCPConnectionsData};
 use libproc::{
     file_info::{ListFDs, ProcFDType},
     net_info::{SocketFDInfo, SocketInfoKind, TcpSIState, TcpSockInfo},
-    proc_pid::pidinfo,
+    proc_pid::{listpidinfo, pidinfo},
     processes::{ProcFilter, pids_by_type},
 };
 use sysctl::Sysctl;
@@ -25,10 +25,14 @@ const DEFAULT_MIN_EPHEMERAL_PORT: u16 = 49152;
 const DEFAULT_MAX_EPHEMERAL_PORT: u16 = 65535;
 
 fn get_ephemeral_port_range() -> (u16, u16) {
-    let min = (sysctl::Ctl::new("net.inet.ip.portrange.first").and_then(|ctl| ctl.value_as::<u32>()) as u16)
-        .unwrap_or(DEFAULT_MAX_EPHEMERAL_PORT);
+    let min = sysctl::Ctl::new("net.inet.ip.portrange.first")
+        .and_then(|ctl| ctl.value_as::<u32>())
+        .map(|v| *v as u16)
+        .unwrap_or(DEFAULT_MIN_EPHEMERAL_PORT);
 
-    let max = (sysctl::Ctl::new("net.inet.ip.portrange.last").and_then(|ctl| ctl.value_as::<u32>()) as u16)
+    let max = sysctl::Ctl::new("net.inet.ip.portrange.last")
+        .and_then(|ctl| ctl.value_as::<u32>())
+        .map(|v| *v as u16)
         .unwrap_or(DEFAULT_MAX_EPHEMERAL_PORT);
 
     (min, max)
@@ -87,7 +91,7 @@ impl MacosTCPConnectionsCollector {
         };
 
         for pid in pids {
-            let fds = match libproc::file_info::listpidinfo::<ListFDs>(pid as i32, 0) {
+            let fds = match listpidinfo::<ListFDs>(pid as i32, 100) {
                 Ok(f) => f,
                 Err(_) => continue,
             };
@@ -104,7 +108,7 @@ impl MacosTCPConnectionsCollector {
                 }
                 let tcp_info = unsafe { socket_info.psi.soi_proto.pri_tcp };
 
-                if tcp_info.tcpsi_state != TcpSIState::ESTABLISHED as i32 {
+                if tcp_info.tcpsi_state != TcpSIState::Established as i32 {
                     continue;
                 }
                 let (local_addr, remote_addr) = extract_addrs(&tcp_info);
@@ -121,7 +125,7 @@ impl MacosTCPConnectionsCollector {
                 let key = TCPConnectionKey::new(self.machine_name.to_string(), local_addr, remote_addr);
                 let id = key.into_tcp_connection_id();
 
-                self.id_to_pid.borrow_mut().insert(id.clone(), *pid);
+                self.id_to_pid.borrow_mut().insert(id.clone(), pid);
 
                 let sent_bytes = None; // TODO: find good field
                 let recv_bytes = None;
