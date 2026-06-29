@@ -27,7 +27,7 @@ const DEFAULT_MAX_EPHEMERAL_PORT: u16 = 65535;
 
 fn get_tcp_estats(row: &MIB_TCPROW_OWNER_PID) -> (Option<Byte>, Option<Byte>) {
     let mut rod = TCP_ESTATS_BANDWIDTH_ROD_v0::default();
-    let mut rod_size = std::mem::size_of::<TCP_ESTATS_BANDWIDTH_ROD_v0>() as u32;
+    let rod_size = std::mem::size_of::<TCP_ESTATS_BANDWIDTH_ROD_v0>() as u32;
 
     let rod_bytes = unsafe { std::slice::from_raw_parts_mut(&mut rod as *mut _ as *mut u8, rod_size as usize) };
 
@@ -147,8 +147,8 @@ impl WindowsTCPConnectionsCollector {
                 // Need process sensor information
                 local_process_id: None,
 
-                recv_bytes: None, // TODO: GetPerTcpConnectionEStats
-                sent_bytes: None,
+                recv_bytes,
+                sent_bytes,
             };
             connections.push(data);
         }

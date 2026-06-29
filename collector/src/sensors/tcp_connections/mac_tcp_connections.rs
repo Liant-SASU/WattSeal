@@ -8,7 +8,7 @@ use common::{TCPConnectionData, TCPConnectionID, TCPConnectionsData};
 use libproc::{
     file_info::{ListFDs, ProcFDType},
     net_info::{SocketFDInfo, SocketInfoKind, TcpSIState, TcpSockInfo},
-    proc_pid::{listpidinfo, pidinfo},
+    proc_pid::listpidinfo,
     processes::{ProcFilter, pids_by_type},
 };
 use sysctl::Sysctl;
