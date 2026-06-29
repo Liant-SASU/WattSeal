@@ -5,10 +5,11 @@ use std::{
 };
 
 use common::{Byte, TCPConnectionData, TCPConnectionID, TCPConnectionsData};
-use libproc::libproc::{
+use libproc::{
     file_info::{ListFDs, ProcFDType},
-    net_info::{SocketFDInfo, SocketInfoKind, TcpSIState},
-    proc_pid::{ProcType, listpids, pidinfo},
+    net_info::{SocketFDInfo, SocketInfoKind, TcpSIState, TcpSockInfo},
+    proc_pid::pidinfo,
+    processes::{ProcFilter, pids_by_type},
 };
 use sysctl::Sysctl;
 
@@ -33,7 +34,7 @@ fn get_ephemeral_port_range() -> (u16, u16) {
     (min, max)
 }
 
-fn extract_addrs(tcp_info: &libproc::libproc::net_info::TcpSockInfo) -> (SocketAddr, SocketAddr) {
+fn extract_addrs(tcp_info: &TcpSockInfo) -> (SocketAddr, SocketAddr) {
     unsafe {
         if tcp_info.tcpsi_ini.insi_vflag == 4 {
             let local_ip = IpAddr::V4(Ipv4Addr::from(
@@ -79,14 +80,14 @@ impl MacosTCPConnectionsCollector {
 
         let mut connections = Vec::new();
 
-        let Ok(pids) = listpids(ProcType::ProcAllPIDS) else {
+        let Ok(pids) = pids_by_type(ProcFilter::All) else {
             return Err(SensorError::ReadError(
                 "Problem while listing procs for socket".to_string(),
             ));
         };
 
         for pid in pids {
-            let fds: Vec<ListFDs> = match pidinfo::<ListFDs>(pid as i32, 0) {
+            let fds = match libproc::file_info::listpidinfo::<ListFDs>(pid as i32, 0) {
                 Ok(f) => f,
                 Err(_) => continue,
             };
@@ -94,7 +95,7 @@ impl MacosTCPConnectionsCollector {
                 if fd.proc_fdtype != ProcFDType::Socket as u32 {
                     continue;
                 }
-                let Ok(socket_info) = pidinfo::<SocketFDInfo>(pid as i32, fd.proc_fd as u64) else {
+                let Ok(socket_info) = libproc::file_info::pidfdinfo::<SocketFDInfo>(pid as i32, fd.proc_fd) else {
                     continue;
                 };
 
@@ -103,7 +104,7 @@ impl MacosTCPConnectionsCollector {
                 }
                 let tcp_info = unsafe { socket_info.psi.soi_proto.pri_tcp };
 
-                if tcp_info.tcpsi_state != TcpSIState::Connected as i32 {
+                if tcp_info.tcpsi_state != TcpSIState::ESTABLISHED as i32 {
                     continue;
                 }
                 let (local_addr, remote_addr) = extract_addrs(&tcp_info);
@@ -122,8 +123,8 @@ impl MacosTCPConnectionsCollector {
 
                 self.id_to_pid.borrow_mut().insert(id.clone(), *pid);
 
-                let recv_bytes = Some(Byte::from(tcp_info.tcpsi_rxbytes as u64));
-                let sent_bytes = Some(Byte::from(tcp_info.tcpsi_txbytes as u64));
+                let sent_bytes = None; // TODO: find good field
+                let recv_bytes = None;
 
                 let data = TCPConnectionData {
                     connection_id: id,
