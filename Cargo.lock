@@ -268,6 +268,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "colhidor"
+version = "1.0.2"
+dependencies = [
+ "bpaf",
+ "collector",
+ "common",
+ "tokio",
+ "winres",
+]
+
+[[package]]
 name = "collector"
 version = "1.0.2"
 dependencies = [
@@ -1871,17 +1882,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23939e44bb9a5d7576fa2b563dc2e136628f1224e88a8deed09e04858b77871f"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "wattseal"
-version = "1.0.2"
-dependencies = [
- "bpaf",
- "collector",
- "common",
- "tokio",
- "winres",
 ]
 
 [[package]]

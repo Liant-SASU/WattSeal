@@ -81,6 +81,6 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            WattSeal-windows.exe
-            WattSeal-linux
-            WattSeal-macos
+            Colhidor-windows.exe
+            Colhidor-linux
+            Colhidor-macos

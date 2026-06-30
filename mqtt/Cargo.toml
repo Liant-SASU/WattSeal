@@ -1,14 +1,7 @@
 [package]
 name = "mqtt"
 version.workspace = true
-authors.workspace = true
-readme.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
-keywords.workspace = true
-edition.workspace = true
-description.workspace = true
+edition = "2024"
 
 [dependencies]
 common = { path = "../common" }

@@ -1,19 +1,18 @@
 [package]
-name = "wattseal"
+name = "colhidor"
 autobins = false
 build = "build.rs"
 version.workspace = true
 authors.workspace = true
 readme.workspace = true
 license.workspace = true
-homepage.workspace = true
 repository.workspace = true
 keywords.workspace = true
 edition.workspace = true
 description.workspace = true
 
 [[bin]]
-name = "WattSeal"
+name = "Colhidor"
 path = "src/main.rs"
 
 [workspace]
@@ -22,14 +21,13 @@ members = ["collector", "common", "mqtt"]
 
 [workspace.package]
 version = "1.0.2"
-authors = ["Damien PHILIPPE <damien.philippe@edu.esiee.fr>", "Paul MALLARD <paul.mallard@edu.esiee.fr>"]
+authors = ["Gabin DUDILLIEU <gabin.dudillieu@liant.dev>", "Paul MALLARD <roland@liant.dev>"]
 readme = "README.md"
 license = "GPL-3.0"
-homepage = "https://wattseal.com"
-repository = "https://github.com/Daminoup88/WattSeal"
+repository = "https://github.com/Liant-SASU/Colhidor"
 keywords = ["power", "energy", "monitoring", "carbon", "emissions", "sustainability"]
 edition = "2024"
-description = "WattSeal is a tool to monitor and analyze the power consumption of your computer, providing insights into energy usage and carbon emissions."
+description = "Colhidor is a tool for collecting consumption data and sending it over the MQTT protocol."
 
 [dependencies]
 collector = { path = "collector" }

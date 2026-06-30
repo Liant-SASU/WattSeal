@@ -28,7 +28,7 @@ fn options() -> OptionParser<Options> {
         .display_fallback();
 
     let mqtt_id = long("mqtt-id")
-        .help("Identifier used as the root of MQTT topics (e.g. my-machine/cpu, my-machine/ram). Requires --mqtt-addr to be set. Defaults to \"wattseal_collector\".")
+        .help("Identifier used as the root of MQTT topics (e.g. my-machine/cpu, my-machine/ram). Requires --mqtt-addr to be set. Defaults to \"colhidor_collector\".")
         .argument::<String>("ID")
         .optional();
 
@@ -51,7 +51,7 @@ fn options() -> OptionParser<Options> {
         })
         .optional();
 
-    let description = "WattSeal - Per-app power monitoring tool";
+    let description = "Colhidor - Per-process power monitoring tool";
 
     #[cfg(target_os = "windows")]
     {
@@ -125,7 +125,7 @@ async fn main() {
     }
 
     let mqtt_infos = if let Some(mqtt_addr) = options.mqtt_addr {
-        let id = options.mqtt_id.unwrap_or("wattseal_collector".to_string());
+        let id = options.mqtt_id.unwrap_or("colhidor_collector".to_string());
         let unit = options.mqtt_unit;
         Some(MQTTInfo::new(&id, &mqtt_addr, unit))
     } else {

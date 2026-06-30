@@ -92,7 +92,7 @@ fn extract_windows_error_code(message: &str) -> Option<u32> {
 fn explain_windows_error_code(code: u32) -> &'static str {
     match code {
         1072 => {
-            "Windows reports the service is marked for deletion; close running WattSeal instances (and any tool using the Scaphandre driver), then retry. If it persists, reboot Windows."
+            "Windows reports the service is marked for deletion; close running Colhidor instances (and any tool using the Scaphandre driver), then retry. If it persists, reboot Windows."
         }
         5 => "Administrator privileges are required.",
         _ => "Unknown error code.",

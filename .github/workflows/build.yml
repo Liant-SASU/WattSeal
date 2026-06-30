@@ -32,19 +32,19 @@ jobs:
         include:
           - os: windows-latest
             os-name: Windows
-            binary-src: target/release/WattSeal.exe
-            binary-dst: WattSeal-windows.exe
+            binary-src: target/release/Colhidor.exe
+            binary-dst: Colhidor-windows.exe
 
           - os: ubuntu-latest
             os-name: Linux
             zigbuild-target: x86_64-unknown-linux-gnu.2.17
-            binary-src: target/x86_64-unknown-linux-gnu/release/WattSeal
-            binary-dst: WattSeal-linux
+            binary-src: target/x86_64-unknown-linux-gnu/release/Colhidor
+            binary-dst: Colhidor-linux
 
           - os: macos-latest
             os-name: macOS
-            binary-src: target/release/WattSeal
-            binary-dst: WattSeal-macos
+            binary-src: target/release/Colhidor
+            binary-dst: Colhidor-macos
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ inputs.check-only && 15 || 60 }}

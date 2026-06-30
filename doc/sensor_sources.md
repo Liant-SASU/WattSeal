@@ -1,6 +1,6 @@
 # Sensor sources
 
-The sources of the metrics collected and estimated by WattSeal for every sensor and OS:
+The sources of the metrics collected and estimated by Colhidor for every sensor and OS:
 
 ## CPU Metrics
 

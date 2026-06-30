@@ -1,136 +1,50 @@
-<div align="center">
+# Colhidor
 
-<img src="resources/svg/banner.svg" alt="WattSeal, Real-time PC power consumption monitoring" width="100%"/>
+Colhidor is a tool for collecting consumption data and sending it over the MQTT protocol.
 
-WattSeal shows you a live breakdown of power consumption of your PC, by component and by app. Monitor which hardware is drawing the most energy, which apps are the biggest energy hogs, and how your usage changes over time.
-
-Available in English and French.
-
-[![Windows](https://img.shields.io/badge/Windows-x86__64-0078D4?style=flat-square&logo=windows)](https://github.com/daminoup88/wattseal/releases)
-[![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?style=flat-square&logo=linux&logoColor=black)](https://github.com/daminoup88/wattseal/releases)
-[![macOS](https://img.shields.io/badge/macOS-aarch64-000000?style=flat-square&logo=apple)](https://github.com/daminoup88/wattseal/releases)
-[![GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square)](LICENSE)
-
-<img src="resources/dashboard.png" alt="WattSeal app dashboard showing real-time power consumption breakdown by application and component" width="80%" style="border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); margin-top: 20px;"/>
-
-</div>
+This one can be used on Windows, macOS, and Linux.
 
 ---
 
-## Why use WattSeal?
+## What can Colhidor measure?
 
-Most people have no idea how much electricity their computer actually uses, or which apps are silently draining power in the background. WattSeal gives you that visibility:
-
-- 🔍 **Live dashboard**: watch power draw update every second
-- 🧩 **Per-component breakdown**: CPU, GPU, RAM, storage, network
-- 📋 **Per-app breakdown**: find out which processes are costing you the most
-- 📈 **Historical charts**: spot trends over time
-- 💾 **Local database**: all your data stays on your machine, private
-
-> Power readings are validated against real hardware measurements using a [Shelly Plug Gen3 S](https://www.shelly.com/products/shelly-plug-s-gen3) smart plug.
-
----
-
-## Getting Started
-
-### Step 1 — Download
-
-Grab the latest release for your operating system from the **[Releases page](https://github.com/daminoup88/wattseal/releases)**:
-
-| Your system | File to download |
-|---|---|
-| Windows (64-bit) | `WattSeal-windows.exe` |
-| Linux (64-bit) | `WattSeal-linux` |
-| macOS (Apple Silicon) | `WattSeal-macos` |
-
-WattSeal is a single executable file — no installation needed. Just download it, and you're ready for the next step.
-
----
-
-### Step 2 — Run it
-
-WattSeal doesn't need administrative privileges to run, but Windows needs a one-time admin step to install the CPU MSR driver for precise power measurements. If you skip that step, you'll still get power estimates based on CPU usage, but they won't be as accurate.
-
-<details>
-<summary><strong>🪟 Windows</strong></summary>
-
-1. Double-click the downloaded `WattSeal-windows-x86_64.exe` file
-2. If prompted by Windows Defender SmartScreen, click "More info" and then "Run anyway" to launch the app. This is a standard warning for new apps that haven't yet built up reputation on Windows.
-3. If prompted by User Account Control (UAC) to install the CPU MSR driver, click "Yes" to install it (this is a one-time step). If you click "No", WattSeal will still run but CPU power readings will be estimated.
-
-The app will launch in the system tray in the taskbar and the dashboard will open in a new window. If you close the dashboard, WattSeal will keep running in the background and you can reopen it by clicking the tray icon.
-
-</details>
-
-<details>
-<summary><strong>🐧 Linux</strong></summary>
-
-Open a terminal in the folder where you downloaded WattSeal and run:
-
-```bash
-chmod +x WattSeal-linux
-sudo ./WattSeal-linux
-```
-
-> **Note:** the only extra runtime dependency is an X11 system tray library.
-> If either `libappindicator` **or** `libayatana-appindicator` is installed
-> the app will show a tray icon with menu items; otherwise WattSeal will
-> simply run in the background without a tray icon (you can still open the
-> dashboard by re‑running the command).
-
-</details>
-
-<details>
-<summary><strong>🍎 macOS</strong></summary>
-
-Run the app normally, WattSeal will work without admin privileges.
-
-</details>
-
----
-
-## What can WattSeal measure?
-
-| Component | How it's measured |
-|---|---|
-| **CPU (Intel / AMD)** | Direct hardware energy counters (RAPL) — very accurate |
-| **GPU (NVIDIA)** | NVML vendor API — very accurate |
-| **GPU (AMD, Windows)** | ADLX vendor API — very accurate |
-| **GPU (Intel, Windows)** | PDH performance counters |
-| **RAM** | Estimated from memory usage |
-| **Disk** | Estimated from read/write activity |
-| **Network** | Estimated from data throughput |
-| **Per-process** | CPU + GPU + I/O breakdown per app |
-
-> **What does "estimated" mean?** For components without built-in energy sensors, WattSeal calculates a best-guess power draw based on how hard the hardware is working and its known power specs. It's less precise than hardware counters, but still gives a solid picture.
+| Component                | How it's measured                                      |
+| --------------------------| --------------------------------------------------------|
+| **CPU (Intel / AMD)**    | Direct hardware energy counters (RAPL) — very accurate |
+| **GPU (NVIDIA)**         | NVML vendor API — very accurate                        |
+| **GPU (AMD, Windows)**   | ADLX vendor API — very accurate                        |
+| **GPU (Intel, Windows)** | PDH performance counters                               |
+| **RAM**                  | Estimated from memory usage                            |
+| **Disk**                 | Estimated from read/write activity                     |
+| **Network**              | Estimated from data throughput                         |
+| **Per-process**          | CPU + GPU + I/O breakdown per process                  |
+| **TCP Connections**      | TCP connections throughput                             |
 
 ---
 
 ## Platform Support
 
-With admin privileges, WattSeal provides the most comprehensive power monitoring experience possible on each platform:
-
-|  | Windows | Linux | macOS |
-|---|:---:|:---:|:---:|
-| Full application | ✅ | ✅ | ✅ |
-| CPU energy counters | ✅ | ✅ | Estimated |
-| NVIDIA GPU | ✅ | ✅ | ❌ |
-| AMD GPU | ✅ | ❌ | ❌ |
-| Intel GPU | ✅ | ❌ | ❌ |
-| Other sensors (usage, I/O) | ✅ | ✅ | ✅ |
-| Auto admin elevation | ✅ UAC (one time) | Manual (`sudo`) | Manual |
+|                            | Windows          | Linux           | macOS     |
+| ----------------------------| :----------------:| :---------------:| :---------:|
+| Full application           | ✅                | ✅               | ✅         |
+| CPU energy counters        | ✅                | ✅               | Estimated |
+| NVIDIA GPU                 | ✅                | ✅               | ❌         |
+| AMD GPU                    | ✅                | ❌               | ❌         |
+| Intel GPU                  | ✅                | ❌               | ❌         |
+| Other sensors (usage, I/O) | ✅                | ✅               | ✅         |
+| Auto admin elevation       | ✅ UAC (one time) | Manual (`sudo`) | Manual    |
 
 <details>
 <summary><strong>Support without admin privileges</strong></summary>
 
-|  | Windows | Linux | macOS |
-|---|:---:|:---:|:---:|
-| Full application | ✅ | ✅ | ✅ |
-| CPU energy counters | ✅ (after driver install) | Estimated | Estimated |
-| NVIDIA GPU | ✅ | ✅ | ❌ |
-| AMD GPU | ✅ | ❌ | ❌ |
-| Intel GPU | ✅ | ❌ | ❌ |
-| Other sensors (usage, I/O) | ✅ | ✅ | ✅ |
+|                            | Windows                  | Linux     | macOS     |
+| ----------------------------| :------------------------:| :---------:| :---------:|
+| Full application           | ✅                        | ✅         | ✅         |
+| CPU energy counters        | ✅ (after driver install) | Estimated | Estimated |
+| NVIDIA GPU                 | ✅                        | ✅         | ❌         |
+| AMD GPU                    | ✅                        | ❌         | ❌         |
+| Intel GPU                  | ✅                        | ❌         | ❌         |
+| Other sensors (usage, I/O) | ✅                        | ✅         | ✅         |
 
 </details>
 
@@ -138,40 +52,16 @@ With admin privileges, WattSeal provides the most comprehensive power monitoring
 
 <br>
 
-## Troubleshooting
-
-**Rendering issues?** If the UI looks broken or fails to launch, try setting the environment variable `ICED_BACKEND=tiny-skia` before running the app. This forces Iced to use a software renderer which is more compatible with older GPUs and VMs.
-
-# 🛠️ Developer Documentation
-<div align="center">
-
-[![Built with Rust](https://img.shields.io/badge/Built%20With-Rust-CE422B?style=flat-square&logo=rust)](https://www.rust-lang.org)
-[![Built with Iced](https://img.shields.io/badge/Built%20With%20Iced-3645FF?logo=iced&logoColor=fff)]()
-
-</div>
-
-The rest of this README is aimed at contributors and developers who want to build WattSeal from source, understand its architecture, or add new features.
-
-> Want to contribute? Check out our [CONTRIBUTING.md](CONTRIBUTING.md) and our [ROADMAP.md](ROADMAP.md) for planned features and areas where help is needed.
-
----
-
 ## Architecture Overview
 
-WattSeal is a Rust workspace made up of three crates:
+Colhidor is a Rust workspace made up of three crates:
 
 ```
-wattseal/               ← Root binary (tray icon, lifecycle management)
-  ├── collector/        ← Background sensor polling, power estimation, DB writes
+colhidor/               ← Root binary
+  ├── collector/        ← Background sensor polling, energy estimation and data sending
   ├── common/           ← Shared types, SQLite layer, utilities
-  └── ui/               ← Iced GUI (dashboard, hardware info, settings, charts)
+  ├── mqtt/             ← MQTT data sender
 ```
-
-**How the pieces fit together:**
-
-![Architecture diagram](resources/svg/overall_architecture.svg)
-
-The collector and UI share the same SQLite database file via WAL (Write-Ahead Logging) mode, which allows concurrent reads and writes without locking.
 
 ---
 
@@ -190,11 +80,11 @@ The collector and UI share the same SQLite database file via WAL (Write-Ahead Lo
 
 Clone the repository:
 ```bash
-git clone https://github.com/daminoup88/wattseal.git
+git clone https://github.com/Liant-SASU/Colhidor.git
 ```
 
 ```bash
-cd wattseal
+cd colhidor
 ```
 
 Debug build and run:
@@ -214,13 +104,12 @@ cargo build --release
 
 ## Project Layout
 
-| Path | What it does |
-|---|---|
-| `src/main.rs` | Entry point: admin elevation, tray icon, collector thread, UI subprocess |
-| `collector/` | All sensor implementations (CPU, GPU, RAM, disk, network, per-process) |
-| `common/` | Shared types (`Event`, `SensorData`, …), SQLite database layer, utilities |
-| `ui/` | Iced application: pages, components, charts, themes, translations |
-
+| Path          | What it does                                                                            |
+| ---------------| -----------------------------------------------------------------------------------------|
+| `src/main.rs` | Entry point: admin elevation, tray icon, collector thread, UI subprocess                |
+| `collector/`  | All sensor implementations (CPU, GPU, RAM, disk, network, per-process, tcp-connections) |
+| `common/`     | Shared types (`Event`, `SensorData`, …), utilities                                      |
+| `mqtt/`       | MQTT data sender                                                                        |
 ---
 
 ## Code Style & Quality
@@ -235,6 +124,10 @@ cargo +nightly fmt
 
 ---
 
-# License
+## License
 
-WattSeal is licensed under [GPL-3.0](LICENSE). See the [LICENSE](LICENSE) file for details.
+Colhidor is licensed under [GPL-3.0](LICENSE). See the [LICENSE](LICENSE) file for details.
+
+## See also
+
+[WattSeal](https://github.com/Daminoup88/WattSeal): The original tool by Damien PHILIPPE. 

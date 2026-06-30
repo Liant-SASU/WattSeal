@@ -101,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_valid_publish() {
-        let test_topic = "wattseal_collector/CPU";
+        let test_topic = "colhidor_collector/CPU";
         let mut mock = MockMQTTClient::new();
 
         mock.expect_publish()
